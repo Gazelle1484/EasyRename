@@ -31,15 +31,14 @@ class HomeViewModel(
 
         runCatching {
             takePersistablePermissionUseCase.forDirectory(uri)
-            loadDirectoryFilesUseCase(uri)
+            loadSortedDirectoryFiles(uri)
         }.onSuccess { files ->
-            val sortedFiles = files.sortedBy { it.displayName.lowercase() }
             _uiState.update { state ->
                 state.copy(
                     selectedDirectoryUri = uri,
                     selectedDirectoryName = resolveDisplayName(uri),
-                    targetFiles = sortedFiles,
-                    targetFileCount = sortedFiles.size,
+                    targetFiles = files,
+                    targetFileCount = files.size,
                     isReadyToStartMatching = state.selectedCsvFileName != null,
                     isLoading = false,
                     error = null,
@@ -51,6 +50,31 @@ class HomeViewModel(
                     isLoading = false,
                     error = AppError.Unknown(
                         detailMessage = throwable.message ?: "Failed to load directory files.",
+                        throwable = throwable,
+                    ),
+                )
+            }
+        }
+    }
+
+    fun refreshSelectedDirectoryFiles() {
+        val directoryUri = _uiState.value.selectedDirectoryUri ?: return
+
+        runCatching {
+            loadSortedDirectoryFiles(directoryUri)
+        }.onSuccess { files ->
+            _uiState.update { state ->
+                state.copy(
+                    targetFiles = files,
+                    targetFileCount = files.size,
+                    error = null,
+                )
+            }
+        }.onFailure { throwable ->
+            _uiState.update { state ->
+                state.copy(
+                    error = AppError.Unknown(
+                        detailMessage = throwable.message ?: "Failed to refresh directory files.",
                         throwable = throwable,
                     ),
                 )
@@ -108,4 +132,7 @@ class HomeViewModel(
     private fun resolveDisplayName(uri: Uri): String {
         return uri.lastPathSegment?.substringAfterLast('/') ?: uri.toString()
     }
+
+    private fun loadSortedDirectoryFiles(uri: Uri) =
+        loadDirectoryFilesUseCase(uri).sortedBy { it.displayName.lowercase() }
 }

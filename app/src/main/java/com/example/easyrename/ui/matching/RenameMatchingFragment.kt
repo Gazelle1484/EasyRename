@@ -39,6 +39,7 @@ class RenameMatchingFragment : Fragment() {
     private lateinit var resultText: TextView
     private lateinit var loadingView: LoadingView
     private var lastShownErrorMessage: String? = null
+    private var lastSyncedSuccessResult: RenameResult? = null
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -135,6 +136,10 @@ class RenameMatchingFragment : Fragment() {
                     loadingView.setLoading(state.isExecuting)
                     resultText.text = state.lastResult?.let { result ->
                         if (result.success) {
+                            if (result != lastSyncedSuccessResult) {
+                                lastSyncedSuccessResult = result
+                                homeViewModel.refreshSelectedDirectoryFiles()
+                            }
                             "成功: ${result.beforeName} -> ${result.afterName} に変更しました。"
                         } else {
                             "失敗: ${toResultErrorMessage(result)}"
