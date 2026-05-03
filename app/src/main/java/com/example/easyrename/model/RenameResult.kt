@@ -10,6 +10,7 @@ data class RenameResult(
     val errorType: RenameErrorType? = null,
     val afterUri: Uri? = null,
     val sourceFileId: String? = null,
+    val renamePath: RenamePath? = null,
 )
 
 enum class RenameErrorType {
@@ -20,4 +21,9 @@ enum class RenameErrorType {
     RenameFailed,
     FileNotFound,
     Unknown,
+}
+
+enum class RenamePath {
+    SingleUri,
+    TreeUriFallback,
 }

@@ -26,7 +26,7 @@ class StorageRepositoryImpl(
         val result = safDocumentDataSource.renameFile(directoryUri, fileUri, newName)
         Log.d(
             TAG_PERF,
-            "repository rename end elapsedMs=${SystemClock.elapsedRealtime() - start} success=${result.success} errorType=${result.errorType} beforeName=${result.beforeName} afterName=${result.afterName} afterUri=${result.afterUri}",
+            "repository rename end elapsedMs=${SystemClock.elapsedRealtime() - start} path=${result.renamePath} success=${result.success} errorType=${result.errorType} beforeName=${result.beforeName} afterName=${result.afterName} afterUri=${result.afterUri}",
         )
         return result
     }

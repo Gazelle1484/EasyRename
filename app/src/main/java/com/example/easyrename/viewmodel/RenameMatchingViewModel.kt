@@ -115,12 +115,12 @@ class RenameMatchingViewModel(
         }.onSuccess { result ->
             Log.d(
                 LOG_TAG,
-                "RenameMatchingViewModel.renameResult success=${result.success} sourceFileId=${result.sourceFileId} beforeName=${result.beforeName} afterName=${result.afterName} afterUri=${result.afterUri} errorType=${result.errorType} errorMessage=${result.errorMessage}",
+                "RenameMatchingViewModel.renameResult success=${result.success} path=${result.renamePath} sourceFileId=${result.sourceFileId} beforeName=${result.beforeName} afterName=${result.afterName} afterUri=${result.afterUri} errorType=${result.errorType} errorMessage=${result.errorMessage}",
             )
             refreshAfterRename(result)
             Log.d(
                 TAG_PERF,
-                "rename total elapsedMs=${SystemClock.elapsedRealtime() - totalStart} success=${result.success} errorType=${result.errorType} beforeName=${result.beforeName} afterName=${result.afterName} sourceFileId=${result.sourceFileId} afterUri=${result.afterUri}",
+                "rename total elapsedMs=${SystemClock.elapsedRealtime() - totalStart} path=${result.renamePath} success=${result.success} errorType=${result.errorType} beforeName=${result.beforeName} afterName=${result.afterName} sourceFileId=${result.sourceFileId} afterUri=${result.afterUri}",
             )
         }.onFailure { throwable ->
             Log.e(LOG_TAG, "RenameMatchingViewModel.executeSelectedRename exceptionClass=${throwable::class.java.simpleName} message=${throwable.message}", throwable)
@@ -140,7 +140,7 @@ class RenameMatchingViewModel(
         val stateUpdateStart = SystemClock.elapsedRealtime()
         Log.d(
             TAG_PERF,
-            "matching state update start success=${result?.success} sourceFileId=${result?.sourceFileId} beforeName=${result?.beforeName} afterName=${result?.afterName} afterUri=${result?.afterUri}",
+            "matching state update start success=${result?.success} path=${result?.renamePath} sourceFileId=${result?.sourceFileId} beforeName=${result?.beforeName} afterName=${result?.afterName} afterUri=${result?.afterUri}",
         )
         _uiState.update { state ->
             if (result == null) {
@@ -195,7 +195,7 @@ class RenameMatchingViewModel(
         }
         Log.d(
             TAG_PERF,
-            "matching state update end elapsedMs=${SystemClock.elapsedRealtime() - stateUpdateStart} success=${result?.success} errorType=${result?.errorType} sourceFileId=${result?.sourceFileId} afterUri=${result?.afterUri}",
+            "matching state update end elapsedMs=${SystemClock.elapsedRealtime() - stateUpdateStart} path=${result?.renamePath} success=${result?.success} errorType=${result?.errorType} sourceFileId=${result?.sourceFileId} afterUri=${result?.afterUri}",
         )
     }
 

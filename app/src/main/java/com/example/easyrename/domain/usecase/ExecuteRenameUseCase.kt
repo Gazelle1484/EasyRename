@@ -43,7 +43,7 @@ class ExecuteRenameUseCase(
         val resultWithSource = result.copy(sourceFileId = renamePair.sourceFile.id)
         Log.d(
             TAG_PERF,
-            "useCase end elapsedMs=${SystemClock.elapsedRealtime() - start} success=${resultWithSource.success} errorType=${resultWithSource.errorType} sourceFileId=${resultWithSource.sourceFileId} beforeName=${resultWithSource.beforeName} afterName=${resultWithSource.afterName} afterUri=${resultWithSource.afterUri}",
+            "useCase end elapsedMs=${SystemClock.elapsedRealtime() - start} path=${resultWithSource.renamePath} success=${resultWithSource.success} errorType=${resultWithSource.errorType} sourceFileId=${resultWithSource.sourceFileId} beforeName=${resultWithSource.beforeName} afterName=${resultWithSource.afterName} afterUri=${resultWithSource.afterUri}",
         )
         return resultWithSource
     }
