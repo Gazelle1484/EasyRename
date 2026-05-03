@@ -1,5 +1,6 @@
 package com.example.easyrename.ui.home
 
+import android.content.res.ColorStateList
 import android.os.Bundle
 import android.util.TypedValue
 import android.view.LayoutInflater
@@ -20,6 +21,7 @@ import com.example.easyrename.ui.common.ErrorDialog
 import com.example.easyrename.ui.common.LoadingView
 import com.example.easyrename.ui.matching.RenameMatchingFragment
 import com.example.easyrename.viewmodel.HomeViewModel
+import com.google.android.material.R as MaterialR
 import kotlinx.coroutines.launch
 
 class HomeFragment : Fragment() {
@@ -61,19 +63,24 @@ class HomeFragment : Fragment() {
 
         val directoryButton = Button(context).apply {
             text = "ディレクトリを選択"
+            textSize = BODY_TEXT_SIZE_SP
             setOnClickListener { directoryPicker.launch(null) }
         }
         val csvButton = Button(context).apply {
             text = "CSVを選択"
+            textSize = BODY_TEXT_SIZE_SP
             setOnClickListener { csvPicker.launch(arrayOf("text/*", "text/csv", "application/vnd.ms-excel")) }
         }
-        directoryNameText = TextView(context)
-        csvNameText = TextView(context)
-        targetFileCountText = TextView(context)
-        candidateCountText = TextView(context)
+        directoryNameText = TextView(context).apply { textSize = BODY_TEXT_SIZE_SP }
+        csvNameText = TextView(context).apply { textSize = BODY_TEXT_SIZE_SP }
+        targetFileCountText = TextView(context).apply { textSize = BODY_TEXT_SIZE_SP }
+        candidateCountText = TextView(context).apply { textSize = BODY_TEXT_SIZE_SP }
         startMatchingButton = Button(context).apply {
             text = "マッチング画面へ進む"
+            textSize = BODY_TEXT_SIZE_SP
             isEnabled = false
+            backgroundTintList = primaryButtonTint()
+            setTextColor(resolveColor(MaterialR.attr.colorOnPrimary))
             setOnClickListener {
                 parentFragmentManager.beginTransaction()
                     .replace(MainActivity.FRAGMENT_CONTAINER_ID, RenameMatchingFragment())
@@ -128,5 +135,28 @@ class HomeFragment : Fragment() {
         } else {
             0
         }
+    }
+
+    private fun primaryButtonTint(): ColorStateList {
+        return ColorStateList(
+            arrayOf(
+                intArrayOf(-android.R.attr.state_enabled),
+                intArrayOf(),
+            ),
+            intArrayOf(
+                resolveColor(android.R.attr.colorControlNormal),
+                resolveColor(MaterialR.attr.colorPrimary),
+            ),
+        )
+    }
+
+    private fun resolveColor(attribute: Int): Int {
+        val typedValue = TypedValue()
+        requireContext().theme.resolveAttribute(attribute, typedValue, true)
+        return typedValue.data
+    }
+
+    private companion object {
+        const val BODY_TEXT_SIZE_SP = 16f
     }
 }
