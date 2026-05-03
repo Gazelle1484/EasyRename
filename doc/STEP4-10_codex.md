@@ -1,4 +1,30 @@
-# STEP 4-10: リネーム性能計測ログ追加 Codex回答
+実機検証結果と、codexの回答から、STEP4-11のプロンプトを生成してください。
+プロンプトはフォーマットに従ってください。
+コードの修正を依頼する場合は、必要な部分から段階を踏んで単機能で依頼すること。
+後に回す機能はメモとして残しておいてください。
+実機で確認するべきログがあれば別途ユーザに指示してください。
+、機能追加に合わせてブランチをcheckout, commit, pushするよう、codexに指示してください。
+## フォーマット　STEP 4-11: 実装（機能単位）
+目的：
+- 1機能ずつ確実に完成させる
+
+指示方法：
+- 「機能単位」で分割して指示する
+
+例：
+- ファイルリネーム処理だけ実装
+- UI表示だけ実装
+- 入力チェックだけ実装
+
+出力させるもの：
+- 実装コード
+- 変更ファイル一覧
+- 動作確認方法
+
+ポイント：
+- 一度に全部やらせない
+- 小さく分割
+# STEP 4-11: リネーム性能計測ログ追加 Codex回答
 
 ## 作業ブランチ
 
@@ -234,6 +260,130 @@ EasyRenamePerf: home applyRenameResult end elapsedMs=...
   → UIスレッドブロック、画面再描画、ログ位置漏れを確認する。
 ```
 
+## 実機ログ分析結果
+
+2026-05-03 21:06〜21:07の実機ログでは、Prefix / Suffix / Replace の成功ケースで、おおむね以下の傾向が確認された。
+
+```text
+リネーム1件の総時間:
+- Prefix: 2186ms
+- Suffix: 2213ms
+- Replace: 2208ms
+
+UseCase全体:
+- 約 2122〜2164ms
+
+Repository + SAF:
+- 約 1352〜1405ms
+
+SAF対象探索:
+- 約 557〜603ms
+
+DocumentFile.renameTo:
+- 約 343〜391ms
+
+Matching側状態更新:
+- 約 24〜38ms
+
+Home側状態更新:
+- 約 0〜1ms
+```
+
+Replaceで `FileAlreadyExists` になったケースもあり、その場合はRepository / SAFへ進まず、約385msで失敗している。これは既に同名ファイルが存在したためで、性能問題とは別の正常な失敗である。
+
+## 性能問題の主因
+
+ログから、`DocumentFile.renameTo()` 自体は約0.35秒であり、総時間2.2秒の主因ではない。
+
+最も大きい問題は、SAFのディレクトリ走査・DocumentFile確認が複数回走っていることである。
+
+特に以下の区間が重い。
+
+```text
+useCase start
+→ repository rename start
+約 0.75〜0.80秒
+```
+
+この区間では、`ExecuteRenameUseCase` の事前同名チェックが走っている。
+
+```kotlin
+storageRepository.existsInSameDirectory(...)
+```
+
+その後、`SafDocumentDataSource.renameFile()` 内でも以下を行っている。
+
+```text
+1. directory.listFiles() で対象ファイル探索
+2. 同じ listFiles 結果で重複チェック
+3. targetFile.exists()
+4. targetFile.canWrite()
+5. targetFile.isFile
+6. targetFile.name
+7. renameTo()
+```
+
+つまり現状は、1件リネームのために以下のような重複したSAFアクセスが発生している。
+
+```text
+1. UseCaseで同名チェック
+   → SAFディレクトリ走査相当で約0.8秒
+
+2. DataSourceで対象ファイル探索
+   → SAFディレクトリ走査で約0.6秒
+
+3. DataSourceでDocumentFile詳細確認
+   → exists / canWrite / isFile / name などProvider呼び出し
+
+4. renameTo
+   → 約0.35秒
+```
+
+状態更新は軽い。
+
+```text
+Matching側状態更新: 24〜38ms
+Home側状態更新: 0〜1ms
+```
+
+そのため、ViewModelの状態更新やsortは今回の主因ではない。
+
+## 次STEPの推奨修正方針
+
+次STEPでは、自動連番へ進む前に、SAF走査回数を減らす性能改善を行うべきである。
+
+最優先の修正は以下。
+
+```text
+ExecuteRenameUseCase側の事前同名チェックをやめる
+↓
+SafDocumentDataSource.renameFile内で、
+対象探索と同名チェックを1回の listFiles 結果でまとめて行う
+```
+
+期待効果:
+
+```text
+useCase start → repository rename start の約0.75〜0.80秒を削減できる可能性が高い。
+```
+
+次点の修正候補。
+
+```text
+STEP4-6調査用に追加した重いDocumentFile詳細ログを整理する
+```
+
+具体的には、毎回以下を呼ぶ必要があるか見直す。
+
+```kotlin
+targetFile.exists()
+targetFile.canWrite()
+targetFile.isFile
+targetFile.name
+```
+
+これらは一見軽そうに見えるが、SAF Provider越しではコストが発生する可能性がある。通常成功ケースではログを減らし、失敗時だけ詳細確認する形が望ましい。
+
 ## Git操作結果
 
 - 作業ブランチ名: `feature/step4-10-rename-performance-log`
@@ -284,3 +434,16 @@ EasyRenamePerf: home applyRenameResult end elapsedMs=...
 - `saf resolve target` が重い: 対象ファイル探索の削減
 - 状態更新が重い: sortやリスト更新範囲の最小化
 - totalだけ重い: UIスレッドや再描画側の追加調査
+
+実機ログの結果、次は以下に進むのが妥当である。
+
+```text
+STEP4-11候補:
+- UseCase側の事前同名チェックを削除
+- 同名チェックをSafDocumentDataSource.renameFile内のlistFiles結果に一本化
+- 成功時のDocumentFile詳細確認ログを削減
+- Prefix / Suffix / Replace の既存挙動は維持
+- FileAlreadyExists の失敗表示は維持
+```
+
+この修正により、1件あたり約2.2秒のうち、少なくとも約0.8秒の削減が期待できる。

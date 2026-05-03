@@ -29,16 +29,7 @@ class ExecuteRenameUseCase(
             )
         }
 
-        if (storageRepository.existsInSameDirectory(renamePair.directoryUri, renamePair.resolvedNewName)) {
-            Log.d(LOG_TAG, "ExecuteRenameUseCase fileAlreadyExists directoryUri=${renamePair.directoryUri} afterName=${renamePair.resolvedNewName}")
-            return RenameResult(
-                beforeName = renamePair.sourceFile.displayName,
-                afterName = renamePair.resolvedNewName,
-                success = false,
-                errorMessage = ERROR_FILE_ALREADY_EXISTS,
-                errorType = RenameErrorType.FileAlreadyExists,
-            )
-        }
+        Log.d(TAG_PERF, "useCase duplicate precheck skipped")
 
         Log.d(
             LOG_TAG,
@@ -61,6 +52,5 @@ class ExecuteRenameUseCase(
         const val LOG_TAG = "EasyRename"
         const val TAG_PERF = "EasyRenamePerf"
         const val ERROR_INVALID_FILE_NAME = "Invalid file name."
-        const val ERROR_FILE_ALREADY_EXISTS = "A file with the same name already exists."
     }
 }

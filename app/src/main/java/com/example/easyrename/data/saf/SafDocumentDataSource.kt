@@ -73,6 +73,9 @@ class SafDocumentDataSource(
             val directoryFiles = directory.listFiles().filter { it.isFile }
             val targetFile = directoryFiles.firstOrNull { it.uri == fileUri }
                 ?: directoryFiles.firstOrNull { it.name == beforeName }
+            val duplicateFile = directoryFiles.firstOrNull { file ->
+                file.name == newName
+            }
             Log.d(
                 TAG_PERF,
                 "saf resolve target end elapsedMs=${SystemClock.elapsedRealtime() - resolveStart} beforeName=$beforeName afterName=$newName targetFound=${targetFile != null}",
@@ -91,13 +94,10 @@ class SafDocumentDataSource(
 
             Log.d(
                 LOG_TAG,
-                "Saf.target exists=${targetFile.exists()} canWrite=${targetFile.canWrite()} isFile=${targetFile.isFile} beforeName=${targetFile.name} afterName=$newName uri=${targetFile.uri}",
+                "Saf.target beforeName=${targetFile.name} afterName=$newName uri=${targetFile.uri}",
             )
 
-            val duplicateExists = directoryFiles.any { file ->
-                file.uri != targetFile.uri && file.name == newName
-            }
-            if (duplicateExists) {
+            if (duplicateFile != null && duplicateFile.uri != targetFile.uri) {
                 return RenameResult(
                     beforeName = targetFile.name ?: beforeName,
                     afterName = newName,
