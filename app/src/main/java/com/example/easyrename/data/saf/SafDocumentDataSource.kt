@@ -2,6 +2,7 @@ package com.example.easyrename.data.saf
 
 import android.content.Context
 import android.net.Uri
+import android.os.SystemClock
 import android.util.Log
 import androidx.documentfile.provider.DocumentFile
 import com.example.easyrename.model.RenameErrorType
@@ -43,8 +44,11 @@ class SafDocumentDataSource(
     }
 
     fun renameFile(directoryUri: Uri, fileUri: Uri, newName: String): RenameResult {
+        val start = SystemClock.elapsedRealtime()
         Log.d(LOG_TAG, "Saf.renameFile start directoryUri=$directoryUri fileUri=$fileUri afterName=$newName")
         return try {
+            val resolveStart = SystemClock.elapsedRealtime()
+            Log.d(TAG_PERF, "saf resolve target start directoryUri=$directoryUri fileUri=$fileUri afterName=$newName")
             val singleDocumentFile = DocumentFile.fromSingleUri(context, fileUri)
             val beforeName = singleDocumentFile?.name ?: fileUri.lastPathSegment.orEmpty()
 
@@ -69,6 +73,10 @@ class SafDocumentDataSource(
             val directoryFiles = directory.listFiles().filter { it.isFile }
             val targetFile = directoryFiles.firstOrNull { it.uri == fileUri }
                 ?: directoryFiles.firstOrNull { it.name == beforeName }
+            Log.d(
+                TAG_PERF,
+                "saf resolve target end elapsedMs=${SystemClock.elapsedRealtime() - resolveStart} beforeName=$beforeName afterName=$newName targetFound=${targetFile != null}",
+            )
 
             if (targetFile == null) {
                 Log.e(LOG_TAG, "Saf.renameFile FileNotFound directoryUri=$directoryUri fileUri=$fileUri beforeName=$beforeName")
@@ -101,6 +109,10 @@ class SafDocumentDataSource(
 
             val success = renameToSafely(targetFile, newName, targetFile.name ?: beforeName)
             Log.d(LOG_TAG, "Saf.renameTo result=${success.success} afterUri=${success.afterUri}")
+            Log.d(
+                TAG_PERF,
+                "saf renameFile end elapsedMs=${SystemClock.elapsedRealtime() - start} success=${success.success} errorType=${success.errorType} beforeName=${success.beforeName} afterName=${success.afterName} afterUri=${success.afterUri}",
+            )
             success
         } catch (exception: SecurityException) {
             Log.e(LOG_TAG, "Saf.renameFile SecurityException message=${exception.message}", exception)
@@ -164,12 +176,19 @@ class SafDocumentDataSource(
 
     private companion object {
         const val LOG_TAG = "EasyRename"
+        const val TAG_PERF = "EasyRenamePerf"
         const val SHIFT_JIS = "Shift_JIS"
     }
 
     private fun renameToSafely(targetFile: DocumentFile, newName: String, beforeName: String): RenameResult {
         return try {
+            val start = SystemClock.elapsedRealtime()
+            Log.d(TAG_PERF, "saf renameTo start beforeName=$beforeName afterName=$newName")
             val renameSuccess = targetFile.renameTo(newName)
+            Log.d(
+                TAG_PERF,
+                "saf renameTo end success=$renameSuccess elapsedMs=${SystemClock.elapsedRealtime() - start} beforeName=$beforeName afterName=$newName afterUri=${if (renameSuccess) targetFile.uri else null}",
+            )
             RenameResult(
                 beforeName = beforeName,
                 afterName = newName,

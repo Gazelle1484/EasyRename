@@ -1,6 +1,7 @@
 package com.example.easyrename.data.repository
 
 import android.net.Uri
+import android.os.SystemClock
 import android.util.Log
 import com.example.easyrename.data.saf.SafDocumentDataSource
 import com.example.easyrename.model.RenameResult
@@ -19,8 +20,15 @@ class StorageRepositoryImpl(
     }
 
     override fun renameFile(directoryUri: Uri, fileUri: Uri, newName: String): RenameResult {
+        val start = SystemClock.elapsedRealtime()
+        Log.d(TAG_PERF, "repository rename start fileUri=$fileUri afterName=$newName")
         Log.d(LOG_TAG, "StorageRepository.renameFile directoryUri=$directoryUri fileUri=$fileUri newName=$newName")
-        return safDocumentDataSource.renameFile(directoryUri, fileUri, newName)
+        val result = safDocumentDataSource.renameFile(directoryUri, fileUri, newName)
+        Log.d(
+            TAG_PERF,
+            "repository rename end elapsedMs=${SystemClock.elapsedRealtime() - start} success=${result.success} errorType=${result.errorType} beforeName=${result.beforeName} afterName=${result.afterName} afterUri=${result.afterUri}",
+        )
+        return result
     }
 
     override fun existsInSameDirectory(directoryUri: Uri, fileName: String): Boolean {
@@ -33,5 +41,6 @@ class StorageRepositoryImpl(
 
     private companion object {
         const val LOG_TAG = "EasyRename"
+        const val TAG_PERF = "EasyRenamePerf"
     }
 }

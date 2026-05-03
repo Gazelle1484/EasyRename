@@ -2,6 +2,7 @@ package com.example.easyrename.ui.matching
 
 import android.content.res.ColorStateList
 import android.os.Bundle
+import android.util.Log
 import android.util.TypedValue
 import android.view.LayoutInflater
 import android.view.View
@@ -121,6 +122,17 @@ class RenameMatchingFragment : Fragment() {
         )[RenameMatchingViewModel::class.java]
 
         executeButton.setOnClickListener {
+            val state = viewModel.uiState.value
+            val selectedTargetName = state.targetFiles.firstOrNull { file ->
+                file.id == state.selectedTargetFileId
+            }?.displayName
+            val selectedCandidateName = state.renameCandidates.firstOrNull { candidate ->
+                candidate.id == state.selectedCandidateId
+            }?.displayName
+            Log.d(
+                TAG_PERF,
+                "rename click start selectedTargetName=$selectedTargetName selectedCandidateName=$selectedCandidateName",
+            )
             viewModel.executeSelectedRename()
         }
         backButton.setOnClickListener {
@@ -273,6 +285,7 @@ class RenameMatchingFragment : Fragment() {
     }
 
     private companion object {
+        const val TAG_PERF = "EasyRenamePerf"
         const val BODY_TEXT_SIZE_SP = 16f
         const val HEADING_TEXT_SIZE_SP = 18f
     }

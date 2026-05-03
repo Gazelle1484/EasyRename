@@ -1,6 +1,7 @@
 package com.example.easyrename.viewmodel
 
 import android.net.Uri
+import android.os.SystemClock
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import com.example.easyrename.domain.usecase.GenerateRenameCandidateUseCase
@@ -87,6 +88,11 @@ class HomeViewModel(
     fun applyRenameResult(result: RenameResult) {
         if (!result.success) return
 
+        val start = SystemClock.elapsedRealtime()
+        Log.d(
+            TAG_PERF,
+            "home applyRenameResult start sourceFileId=${result.sourceFileId} beforeName=${result.beforeName} afterName=${result.afterName} afterUri=${result.afterUri}",
+        )
         _uiState.update { state ->
             val updatedFiles = state.targetFiles.map { file ->
                 val shouldUpdate = file.id == result.sourceFileId ||
@@ -113,6 +119,10 @@ class HomeViewModel(
 
             state.copy(targetFiles = updatedFiles)
         }
+        Log.d(
+            TAG_PERF,
+            "home applyRenameResult end elapsedMs=${SystemClock.elapsedRealtime() - start} sourceFileId=${result.sourceFileId} afterUri=${result.afterUri}",
+        )
     }
 
     fun onCsvSelected(uri: Uri) {
@@ -171,5 +181,6 @@ class HomeViewModel(
 
     private companion object {
         const val LOG_TAG = "EasyRename"
+        const val TAG_PERF = "EasyRenamePerf"
     }
 }

@@ -1,6 +1,7 @@
 package com.example.easyrename.viewmodel
 
 import android.net.Uri
+import android.os.SystemClock
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import com.example.easyrename.domain.usecase.ExecuteRenameUseCase
@@ -74,6 +75,8 @@ class RenameMatchingViewModel(
     }
 
     fun executeSelectedRename() {
+        val totalStart = SystemClock.elapsedRealtime()
+        Log.d(TAG_PERF, "viewModel rename start renameMode=$renameMode")
         _uiState.update { state ->
             state.copy(isExecuting = true, error = null)
         }
@@ -115,6 +118,10 @@ class RenameMatchingViewModel(
                 "RenameMatchingViewModel.renameResult success=${result.success} sourceFileId=${result.sourceFileId} beforeName=${result.beforeName} afterName=${result.afterName} afterUri=${result.afterUri} errorType=${result.errorType} errorMessage=${result.errorMessage}",
             )
             refreshAfterRename(result)
+            Log.d(
+                TAG_PERF,
+                "rename total elapsedMs=${SystemClock.elapsedRealtime() - totalStart} success=${result.success} errorType=${result.errorType} beforeName=${result.beforeName} afterName=${result.afterName} sourceFileId=${result.sourceFileId} afterUri=${result.afterUri}",
+            )
         }.onFailure { throwable ->
             Log.e(LOG_TAG, "RenameMatchingViewModel.executeSelectedRename exceptionClass=${throwable::class.java.simpleName} message=${throwable.message}", throwable)
             _uiState.update { state ->
@@ -130,6 +137,11 @@ class RenameMatchingViewModel(
     }
 
     fun refreshAfterRename(result: RenameResult? = _uiState.value.lastResult) {
+        val stateUpdateStart = SystemClock.elapsedRealtime()
+        Log.d(
+            TAG_PERF,
+            "matching state update start success=${result?.success} sourceFileId=${result?.sourceFileId} beforeName=${result?.beforeName} afterName=${result?.afterName} afterUri=${result?.afterUri}",
+        )
         _uiState.update { state ->
             if (result == null) {
                 return@update state.copy(isExecuting = false)
@@ -181,6 +193,10 @@ class RenameMatchingViewModel(
                 error = null,
             )
         }
+        Log.d(
+            TAG_PERF,
+            "matching state update end elapsedMs=${SystemClock.elapsedRealtime() - stateUpdateStart} success=${result?.success} errorType=${result?.errorType} sourceFileId=${result?.sourceFileId} afterUri=${result?.afterUri}",
+        )
     }
 
     private fun toAppError(result: RenameResult): AppError {
@@ -216,5 +232,6 @@ class RenameMatchingViewModel(
 
     private companion object {
         const val LOG_TAG = "EasyRename"
+        const val TAG_PERF = "EasyRenamePerf"
     }
 }
