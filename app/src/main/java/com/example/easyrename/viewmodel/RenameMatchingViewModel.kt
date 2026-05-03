@@ -32,6 +32,7 @@ class RenameMatchingViewModel(
     initialRenameCandidates: List<RenameCandidate> = emptyList(),
 ) : ViewModel() {
 
+    private val autoNumberCounters: MutableMap<String, Int> = mutableMapOf()
     private val _uiState = MutableStateFlow(
         RenameMatchingUiState(
             targetFiles = initialTargetFiles.sortedBy { it.displayName.lowercase() },
@@ -39,6 +40,16 @@ class RenameMatchingViewModel(
         ),
     )
     val uiState: StateFlow<RenameMatchingUiState> = _uiState.asStateFlow()
+
+    fun toggleAutoNumbering() {
+        if (_uiState.value.isExecuting) return
+
+        _uiState.update { state ->
+            val enabled = !state.isAutoNumberingEnabled
+            Log.d(LOG_TAG, "RenameMatchingViewModel.toggleAutoNumbering enabled=$enabled")
+            state.copy(isAutoNumberingEnabled = enabled, error = null)
+        }
+    }
 
     fun selectTargetFile(fileId: String) {
         if (_uiState.value.isExecuting) return
@@ -100,6 +111,7 @@ class RenameMatchingViewModel(
             val selectedFile = currentState.targetFiles.firstOrNull { it.id == currentState.selectedTargetFileId }
             val selectedCandidate = currentState.renameCandidates.firstOrNull { it.id == currentState.selectedCandidateId }
             val selectedDirectoryUri = directoryUri
+            val isAutoNumberingEnabled = currentState.isAutoNumberingEnabled
 
             if (selectedFile == null || selectedCandidate == null || selectedDirectoryUri == null) {
                 Log.e(LOG_TAG, "RenameMatchingViewModel.executeSelectedRename missingSelection directoryUri=$selectedDirectoryUri")
@@ -113,14 +125,25 @@ class RenameMatchingViewModel(
                 return@launch
             }
 
+            val autoNumberKey = selectedCandidate.rawPattern
+            val autoNumber = if (isAutoNumberingEnabled) {
+                autoNumberCounters[autoNumberKey] ?: INITIAL_AUTO_NUMBER
+            } else {
+                null
+            }
             val ioStart = SystemClock.elapsedRealtime()
             runCatching {
                 Log.d(TAG_PERF, "viewModel withContext(IO) start")
                 withContext(Dispatchers.IO) {
-                    val resolvedNewName = resolveRenameNameUseCase(selectedFile, selectedCandidate, renameMode)
+                    val resolvedNewName = resolveRenameNameUseCase(
+                        sourceFile = selectedFile,
+                        candidate = selectedCandidate,
+                        renameMode = renameMode,
+                        autoNumber = autoNumber,
+                    )
                     Log.d(
                         LOG_TAG,
-                        "RenameMatchingViewModel.executeSelectedRename selectedRenameMode=$renameMode directoryUri=$selectedDirectoryUri fileUri=${selectedFile.uri} sourceFile.displayName=${selectedFile.displayName} candidate.rawPattern=${selectedCandidate.rawPattern} candidate.displayName=${selectedCandidate.displayName} resolvedNewName=$resolvedNewName",
+                        "RenameMatchingViewModel.executeSelectedRename isAutoNumberingEnabled=$isAutoNumberingEnabled selectedRenameMode=$renameMode directoryUri=$selectedDirectoryUri fileUri=${selectedFile.uri} sourceFile.displayName=${selectedFile.displayName} candidate.rawPattern=${selectedCandidate.rawPattern} candidate.displayName=${selectedCandidate.displayName} autoNumber=$autoNumber resolvedNewName=$resolvedNewName",
                     )
                     val renamePair = RenamePair(
                         sourceFile = selectedFile,
@@ -137,6 +160,19 @@ class RenameMatchingViewModel(
                     LOG_TAG,
                     "RenameMatchingViewModel.renameResult success=${result.success} path=${result.renamePath} sourceFileId=${result.sourceFileId} beforeName=${result.beforeName} afterName=${result.afterName} afterUri=${result.afterUri} errorType=${result.errorType} errorMessage=${result.errorMessage}",
                 )
+                if (result.success && autoNumber != null) {
+                    val counterAfter = autoNumber + 1
+                    autoNumberCounters[autoNumberKey] = counterAfter
+                    Log.d(
+                        LOG_TAG,
+                        "RenameMatchingViewModel.autoNumberCounter success=true candidate.rawPattern=$autoNumberKey counterBefore=$autoNumber counterAfter=$counterAfter",
+                    )
+                } else if (autoNumber != null) {
+                    Log.d(
+                        LOG_TAG,
+                        "RenameMatchingViewModel.autoNumberCounter success=false candidate.rawPattern=$autoNumberKey counterBefore=$autoNumber counterAfter=$autoNumber",
+                    )
+                }
                 val stateUpdateStart = SystemClock.elapsedRealtime()
                 refreshAfterRename(result)
                 Log.d(TAG_PERF, "viewModel state update after IO elapsedMs=${SystemClock.elapsedRealtime() - stateUpdateStart}")
@@ -200,7 +236,10 @@ class RenameMatchingViewModel(
             }.sortedBy { it.displayName.lowercase() }
             val updatedCandidates = state.renameCandidates.map { candidate ->
                 if (candidate.id == state.selectedCandidateId) {
-                    candidate.copy(isSelected = false, isUsed = true)
+                    candidate.copy(
+                        isSelected = false,
+                        isUsed = if (state.isAutoNumberingEnabled) candidate.isUsed else true,
+                    )
                 } else {
                     candidate.copy(isSelected = false)
                 }
@@ -257,5 +296,6 @@ class RenameMatchingViewModel(
     private companion object {
         const val LOG_TAG = "EasyRename"
         const val TAG_PERF = "EasyRenamePerf"
+        const val INITIAL_AUTO_NUMBER = 1
     }
 }

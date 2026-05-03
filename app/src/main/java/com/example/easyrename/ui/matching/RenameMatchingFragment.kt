@@ -37,6 +37,7 @@ class RenameMatchingFragment : Fragment() {
     private lateinit var candidatesContainer: LinearLayout
     private lateinit var executeButton: Button
     private lateinit var backButton: Button
+    private lateinit var autoNumberButton: Button
     private lateinit var resultText: TextView
     private lateinit var loadingView: LoadingView
     private var lastShownErrorMessage: String? = null
@@ -72,6 +73,12 @@ class RenameMatchingFragment : Fragment() {
             backgroundTintList = secondaryButtonTint()
             setTextColor(resolveColor(MaterialR.attr.colorOnSecondary))
         }
+        autoNumberButton = Button(context).apply {
+            text = "自動連番: OFF"
+            textSize = BODY_TEXT_SIZE_SP
+            backgroundTintList = secondaryButtonTint()
+            setTextColor(resolveColor(MaterialR.attr.colorOnSecondary))
+        }
         resultText = TextView(context).apply {
             textSize = BODY_TEXT_SIZE_SP
         }
@@ -83,6 +90,13 @@ class RenameMatchingFragment : Fragment() {
                 addView(
                     backButton,
                     LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                        marginEnd = 8
+                    },
+                )
+                addView(
+                    autoNumberButton,
+                    LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 2f).apply {
+                        marginStart = 8
                         marginEnd = 8
                     },
                 )
@@ -138,6 +152,9 @@ class RenameMatchingFragment : Fragment() {
         backButton.setOnClickListener {
             parentFragmentManager.popBackStack()
         }
+        autoNumberButton.setOnClickListener {
+            viewModel.toggleAutoNumbering()
+        }
 
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -150,6 +167,26 @@ class RenameMatchingFragment : Fragment() {
                     } else {
                         "リネーム実行"
                     }
+                    autoNumberButton.isEnabled = !state.isExecuting
+                    autoNumberButton.text = if (state.isAutoNumberingEnabled) {
+                        "自動連番: ON"
+                    } else {
+                        "自動連番: OFF"
+                    }
+                    autoNumberButton.backgroundTintList = if (state.isAutoNumberingEnabled) {
+                        primaryButtonTint()
+                    } else {
+                        secondaryButtonTint()
+                    }
+                    autoNumberButton.setTextColor(
+                        resolveColor(
+                            if (state.isAutoNumberingEnabled) {
+                                MaterialR.attr.colorOnPrimary
+                            } else {
+                                MaterialR.attr.colorOnSecondary
+                            },
+                        ),
+                    )
                     loadingView.setLoading(state.isExecuting)
                     resultText.text = if (state.isExecuting) {
                         "リネーム中..."
