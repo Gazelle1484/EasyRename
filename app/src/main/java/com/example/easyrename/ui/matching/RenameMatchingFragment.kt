@@ -2,6 +2,7 @@ package com.example.easyrename.ui.matching
 
 import android.content.res.ColorStateList
 import android.os.Bundle
+import android.util.Log
 import android.util.TypedValue
 import android.view.LayoutInflater
 import android.view.View
@@ -39,6 +40,7 @@ class RenameMatchingFragment : Fragment() {
     private lateinit var resultText: TextView
     private lateinit var loadingView: LoadingView
     private var lastShownErrorMessage: String? = null
+    private var lastSyncedSuccessResult: RenameResult? = null
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -120,6 +122,17 @@ class RenameMatchingFragment : Fragment() {
         )[RenameMatchingViewModel::class.java]
 
         executeButton.setOnClickListener {
+            val state = viewModel.uiState.value
+            val selectedTargetName = state.targetFiles.firstOrNull { file ->
+                file.id == state.selectedTargetFileId
+            }?.displayName
+            val selectedCandidateName = state.renameCandidates.firstOrNull { candidate ->
+                candidate.id == state.selectedCandidateId
+            }?.displayName
+            Log.d(
+                TAG_PERF,
+                "rename click start selectedTargetName=$selectedTargetName selectedCandidateName=$selectedCandidateName",
+            )
             viewModel.executeSelectedRename()
         }
         backButton.setOnClickListener {
@@ -129,17 +142,30 @@ class RenameMatchingFragment : Fragment() {
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 viewModel.uiState.collect { state ->
-                    renderFiles(state.targetFiles)
-                    renderCandidates(state.renameCandidates)
+                    renderFiles(state.targetFiles, state.isExecuting)
+                    renderCandidates(state.renameCandidates, state.isExecuting)
                     executeButton.isEnabled = state.canExecuteRename && !state.isExecuting
+                    executeButton.text = if (state.isExecuting) {
+                        "リネーム中..."
+                    } else {
+                        "リネーム実行"
+                    }
                     loadingView.setLoading(state.isExecuting)
-                    resultText.text = state.lastResult?.let { result ->
+                    resultText.text = if (state.isExecuting) {
+                        "リネーム中..."
+                    } else {
+                        state.lastResult?.let { result ->
                         if (result.success) {
+                            if (result != lastSyncedSuccessResult) {
+                                lastSyncedSuccessResult = result
+                                homeViewModel.applyRenameResult(result)
+                            }
                             "成功: ${result.beforeName} -> ${result.afterName} に変更しました。"
                         } else {
                             "失敗: ${toResultErrorMessage(result)}"
                         }
-                    }.orEmpty()
+                        }.orEmpty()
+                    }
 
                     state.error?.let { error ->
                         val messageKey = error.toString()
@@ -153,7 +179,7 @@ class RenameMatchingFragment : Fragment() {
         }
     }
 
-    private fun renderFiles(files: List<RenameTargetFile>) {
+    private fun renderFiles(files: List<RenameTargetFile>, isExecuting: Boolean) {
         filesContainer.removeAllViews()
         files.forEach { file ->
             filesContainer.addView(
@@ -163,7 +189,7 @@ class RenameMatchingFragment : Fragment() {
                         if (file.isRenamed) append("[リネーム済み] ")
                         append(file.displayName)
                     }
-                    isEnabled = !file.isRenamed
+                    isEnabled = !file.isRenamed && !isExecuting
                     textSize = BODY_TEXT_SIZE_SP
                     setOnClickListener { viewModel.selectTargetFile(file.id) }
                 },
@@ -171,7 +197,7 @@ class RenameMatchingFragment : Fragment() {
         }
     }
 
-    private fun renderCandidates(candidates: List<RenameCandidate>) {
+    private fun renderCandidates(candidates: List<RenameCandidate>, isExecuting: Boolean) {
         candidatesContainer.removeAllViews()
         candidates.forEach { candidate ->
             candidatesContainer.addView(
@@ -181,7 +207,7 @@ class RenameMatchingFragment : Fragment() {
                         if (candidate.isUsed) append("[使用済み] ")
                         append(candidate.displayName)
                     }
-                    isEnabled = !candidate.isUsed
+                    isEnabled = !candidate.isUsed && !isExecuting
                     textSize = BODY_TEXT_SIZE_SP
                     setOnClickListener { viewModel.selectRenameCandidate(candidate.id) }
                 },
@@ -268,6 +294,7 @@ class RenameMatchingFragment : Fragment() {
     }
 
     private companion object {
+        const val TAG_PERF = "EasyRenamePerf"
         const val BODY_TEXT_SIZE_SP = 16f
         const val HEADING_TEXT_SIZE_SP = 18f
     }
