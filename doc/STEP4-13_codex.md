@@ -1,3 +1,37 @@
+実機検証結果と、codexの回答から、STEP4-14のプロンプトを生成してください。
+プロンプトはフォーマットに従ってください。
+コードの修正を依頼する場合は、必要な部分から段階を踏んで単機能で依頼すること。
+後に回す機能はメモとして残しておいてください。
+実機で確認するべきログがあれば別途ユーザに指示してください。
+、機能追加に合わせてブランチをcheckout, commit, pushするよう、codexに指示してください。
+## フォーマット　STEP 4-14: 実装（機能単位）
+目的：
+- 1機能ずつ確実に完成させる
+
+指示方法：
+- 「機能単位」で分割して指示する
+
+例：
+- ファイルリネーム処理だけ実装
+- UI表示だけ実装
+- 入力チェックだけ実装
+
+出力させるもの：
+- 実装コード
+- 変更ファイル一覧
+- 動作確認方法
+
+ポイント：
+- 一度に全部やらせない
+- 小さく分割
+
+###### 追加の要望
+- （可能であれば）ディレクトリを選択する際、変更日時が新しい順にあらかじめソートし、ディレクトリがトップに来るようにしてほしい
+- （可能であれば）csvを選択する際、変更日時が新しい順にあらかじめソートし、csvがトップに来るようにしてほしい。または、csvのみが表示されるようにしてほしい
+- マッチング画面では、リネーム対象/リネーム候補それぞれが辞書順にソートされてほしい。
+- リネーム前ファイルがリネームするとリネーム後になるのは維持してほしい。
+- 自動連番機能をつけたい。これは実装例です。「画面上部に自動連番ボタンを追加し、自動連番ボタンを押下すると自動連番モードになる。自動連番モードでリネーム候補とリネーム前ファイルを押下すると、リネーム候補の末尾に「-1」のようにつけて扱う。つまり、logs1223.txtとlogs1226.txtをそれぞれ「A1-1」の先頭モードで、この順にリネームすると「A1-1-1_logs1223.txt」,「A1-1-2_logs1226.txt」になる。末尾モードであれば「logs1223_A1-1-1.txt」, 「logs1226_A1-1-2.txt」となる。
+
 # STEP 4-13: リネーム非同期化と実行中UI改善 Codex回答
 
 ## 作業ブランチ
@@ -255,8 +289,8 @@ BUILD SUCCESSFUL
 - 分岐元ブランチ: `feature/step4-12-single-uri-fast-path`
 - commit message: `Run rename work asynchronously with loading state`
 - push先ブランチ: `origin/feature/step4-13-rename-async-loading`
-- commit hash: コミット作成後に最終応答で報告
-- 未コミット差分の有無: コミット後に確認
+- commit hash: `3c14df0`
+- 未コミット差分の有無: push直後はなし。実機ログ分析追記により、このドキュメントのみ追加更新。
 
 ## 実機ログ確認手順
 
@@ -308,6 +342,86 @@ EasyRenamePerf: viewModel state update after IO elapsedMs=...
 - path=TreeUriFallback でも成功しているか
 ```
 
+## 実機ログ確認結果
+
+STEP4-13を端末へインストール後、Prefixモードで複数回リネームを実行した。
+
+確認できた代表ログ。
+
+```text
+1回目:
+viewModel coroutine start renameMode=Prefix
+viewModel withContext(IO) start
+useCase start ... thread=3658-4289
+saf resolve target elapsedMs=707
+saf renameTo elapsedMs=1421
+saf renameFile elapsedMs=2181 path=TreeUriFallback
+viewModel withContext(IO) end elapsedMs=2189
+viewModel state update after IO elapsedMs=48
+rename total elapsedMs=2239 path=TreeUriFallback
+
+2回目:
+viewModel withContext(IO) start
+saf resolve target elapsedMs=587
+saf renameTo elapsedMs=354
+saf renameFile elapsedMs=971 path=TreeUriFallback
+viewModel withContext(IO) end elapsedMs=974
+viewModel state update after IO elapsedMs=40
+rename total elapsedMs=1015 path=TreeUriFallback
+
+3回目:
+viewModel withContext(IO) start
+saf resolve target elapsedMs=694
+saf renameTo elapsedMs=70
+saf renameFile elapsedMs=792 path=TreeUriFallback
+viewModel withContext(IO) end elapsedMs=797
+viewModel state update after IO elapsedMs=41
+rename total elapsedMs=838 path=TreeUriFallback
+```
+
+実機ログから分かること。
+
+- `viewModel coroutine start` と `viewModel withContext(IO) start` が出ており、ViewModel起点のCoroutine実行が確認できた。
+- UseCase / Repository / SAF のログは `3658-4289` 側で出ている。一方、ViewModel開始・終了・状態更新ログは `3658-3658` 側で出ている。
+- つまり、重いSAF処理はUIスレッドから外れ、`Dispatchers.IO` 上で動作している。
+- `path=TreeUriFallback` で成功しており、STEP4-12までのfallback方式は維持されている。
+- `singleUri fast path` は引き続き `UnsupportedOperation` で失敗しているが、クラッシュせずfallbackしている。
+- `FileNotFound` は提示ログ内では再発していない。
+- `viewModel state update after IO` は約40〜48msで、I/O完了後の状態反映は軽い。
+- リネーム総時間は838〜2239msでばらつきがある。特に1回目は `renameTo` が1421msと重く、Provider依存の待ち時間が大きい。
+
+結論。
+
+```text
+STEP4-13の主目的である「SAF処理をUIスレッドから外す」は達成。
+ただし、総リネーム時間そのものはProvider依存のため短縮されるとは限らない。
+```
+
+今回の改善は「処理時間の短縮」ではなく、「重い処理中もUIを固めない」ための改善である。ログ上は、処理本体がI/O側スレッドで動いているため、設計どおりの状態になっている。
+
+次に実機で確認すべきUI観点。
+
+```text
+1. 実行中に「リネーム中...」が表示されること
+2. ProgressBarが見えること
+3. 実行中にリネーム実行ボタンが無効化されること
+4. 実行中に元ファイル一覧・候補一覧が選択できないこと
+5. 実行中に連打しても二重実行されないこと
+6. 成功後にボタンが通常状態へ戻ること
+7. 失敗時もボタンが通常状態へ戻ること
+```
+
+二重押下確認時のログ観点。
+
+```text
+理想:
+- 実行中はUIボタンがdisabledになり、2回目の rename click start 自体が出ない
+
+もしクリックログが出る場合:
+- viewModel rename ignored because already executing
+  が出て、2回目のUseCase / Repository / SAFが走らないこと
+```
+
 ## 後に回す機能メモ
 
 - 自動連番機能
@@ -336,13 +450,14 @@ EasyRenamePerf: viewModel state update after IO elapsedMs=...
 ## 未解決事項・リスク
 
 - リネーム総時間自体はProvider依存のため、`Dispatchers.IO` 対応だけでは短くならない可能性がある。今回の主目的はUI停止の軽減である。
+- 実機ログでも、総時間は838〜2239msとばらついた。特に `renameTo` が70msの回もあれば1421msの回もあり、Provider側の状態に大きく依存している。
 - Home画面のディレクトリ読み込み / CSV読み込みは今回非同期化していない。
-- `directory.listFiles()` の約0.9秒前後のボトルネックは残っている。キャッシュ化は外部変更や同名チェックの整合性が必要なため後続STEPで扱う。
+- `directory.listFiles()` 相当の `saf resolve target` は約587〜707ms残っている。キャッシュ化は外部変更や同名チェックの整合性が必要なため後続STEPで扱う。
 - `singleUri` fast pathが毎回 `UnsupportedOperation` になるProviderでは、次STEP以降でfast pathスキップを検討できる。
 
 ## 次に進めるべきSTEP
 
-実機でSTEP4-13後のUI挙動を確認する。
+STEP4-13後のログでは、非同期化は成立している。次はUIの見え方と二重押下防止を実機で確認する。
 
 確認後、次に進める候補は以下。
 
