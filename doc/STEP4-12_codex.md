@@ -1,3 +1,29 @@
+実機検証結果と、codexの回答から、STEP4-13のプロンプトを生成してください。
+プロンプトはフォーマットに従ってください。
+コードの修正を依頼する場合は、必要な部分から段階を踏んで単機能で依頼すること。
+後に回す機能はメモとして残しておいてください。
+実機で確認するべきログがあれば別途ユーザに指示してください。
+、機能追加に合わせてブランチをcheckout, commit, pushするよう、codexに指示してください。
+## フォーマット　STEP 4-13: 実装（機能単位）
+目的：
+- 1機能ずつ確実に完成させる
+
+指示方法：
+- 「機能単位」で分割して指示する
+
+例：
+- ファイルリネーム処理だけ実装
+- UI表示だけ実装
+- 入力チェックだけ実装
+
+出力させるもの：
+- 実装コード
+- 変更ファイル一覧
+- 動作確認方法
+
+ポイント：
+- 一度に全部やらせない
+- 小さく分割
 # STEP 4-12: singleUri fast pathによるリネーム高速化 Codex回答
 
 ## 作業ブランチ
@@ -257,8 +283,8 @@ BUILD SUCCESSFUL
 - 分岐元ブランチ: `feature/step4-11-saf-scan-optimization`
 - commit message: `Add single URI rename fast path`
 - push先ブランチ: `origin/feature/step4-12-single-uri-fast-path`
-- commit hash: コミット作成後に最終応答で報告
-- 未コミット差分の有無: コミット後に確認
+- commit hash: `6e6bced`
+- 未コミット差分の有無: push直後はなし。実機ログ分析追記により、このドキュメントのみ追加更新。
 
 ## 実機ログ確認手順
 
@@ -322,6 +348,53 @@ STEP4-12後:
 - FileAlreadyExists が維持されているか
 ```
 
+## 実機検証結果
+
+STEP4-12をインストール後、実機ログでPrefix / Replaceを含む複数回のリネームを確認した。
+
+確認できた代表値。
+
+```text
+1回目 Prefix:
+singleUri fast path failed reason=UnsupportedOperation elapsedMs=17
+saf resolve target elapsedMs=915
+saf renameTo elapsedMs=550
+saf renameFile elapsedMs=1514 path=TreeUriFallback
+rename total elapsedMs=1581 path=TreeUriFallback
+
+2回目 Prefix:
+singleUri fast path failed reason=UnsupportedOperation elapsedMs=20
+saf resolve target elapsedMs=936
+saf renameTo elapsedMs=112
+saf renameFile elapsedMs=1095 path=TreeUriFallback
+rename total elapsedMs=1164 path=TreeUriFallback
+
+3回目 Replace:
+singleUri fast path failed reason=UnsupportedOperation elapsedMs=12
+saf resolve target elapsedMs=886
+saf renameTo elapsedMs=96
+saf renameFile elapsedMs=1018 path=TreeUriFallback
+rename total elapsedMs=1082 path=TreeUriFallback
+```
+
+実機ログから分かること。
+
+- `singleUri fast path start` は毎回出ており、fast pathの試行自体は実装どおり行われている。
+- この端末・保存場所では、`DocumentFile.fromSingleUri(...).renameTo(...)` が毎回 `UnsupportedOperation` で失敗している。
+- 失敗後は `treeUri fallback start` に進み、`path=TreeUriFallback` でリネーム成功している。
+- `UnsupportedOperationException` 相当の失敗でアプリはクラッシュしていない。
+- `saf resolve target` は約886〜936msで、STEP4-11と同じく主な待ち時間として残っている。
+- `singleUri` 失敗自体は12〜20ms程度なので、大きな劣化要因ではない。ただし毎回失敗するProviderでは不要な試行である。
+
+結論。
+
+```text
+STEP4-12のfallback設計は成功。
+ただし、この端末・保存場所ではsingleUri fast pathはサポートされず、高速化効果は出なかった。
+```
+
+つまり、今回の実装は「成功するProviderでは高速化できる可能性を残しつつ、失敗するProviderでは安全にtreeUri方式へ戻す」設計として機能している。一方、今回の実機環境では常にfallbackになるため、体感改善の主戦場は引き続き `treeUri` 探索とUI待ち時間の扱いになる。
+
 ## 後に回す機能メモ
 
 - 自動連番機能
@@ -352,27 +425,32 @@ STEP4-12後:
 
 - `singleUri` fast pathでは `directory.listFiles()` を省略するため、fast path成功時は事前同名チェックを行わない。Providerが同名リネームをどう扱うかはProvider依存である。
 - Android標準の外部ストレージProviderでは同名時に `renameTo` が失敗する可能性が高いが、上書きに近い挙動をするProviderが見つかった場合は、fast path前の軽量同名チェックまたはfast pathの設定化を検討する。
-- fast pathが失敗するProviderでは、従来どおり `treeUri` fallbackに進むため、STEP4-11と同程度の時間がかかる。
+- 今回の実機環境では fast path が毎回 `UnsupportedOperation` で失敗した。従来どおり `treeUri` fallbackに進むため、STEP4-11と同程度の時間がかかる。
+- 同じProviderで毎回 `UnsupportedOperation` になる場合、次回以降は `singleUri` fast pathをスキップする簡易キャッシュを検討できる。ただし削減できるのは今回ログ上では12〜20ms程度であり、主ボトルネックは `listFiles()` である。
 - `DocumentFile.renameTo()` 自体の約0.3〜0.4秒はProvider依存であり、今回の修正では短縮対象にしていない。
 - ViewModel内I/Oの `Dispatchers.IO` 対応はまだ行っていない。
 
 ## 次に進めるべきSTEP
 
-実機でSTEP4-12後の `EasyRenamePerf` ログを取得し、`path=SingleUri` が出るか確認する。
+STEP4-12後の実機ログでは、`path=SingleUri` は出ず、すべて `path=TreeUriFallback` だった。
 
-確認結果に応じて、次のSTEPを判断する。
+したがって、次STEPでは `singleUri` の追加追跡より、`treeUri` 探索方式が残る前提で体感速度を改善するのが妥当である。
 
 ```text
-1. fast path成功で大きく短縮できた場合
-   - 同名時の安全性確認
-   - fast path ON/OFF設定の要否検討
+1. SAF処理をDispatchers.IOへ移す
+   - 現在の重いSAF処理でUIスレッドを止めない
+   - 体感上のフリーズを減らす
+   - MVVM構成上、ViewModelまたはUseCase呼び出しをCoroutine化する設計が候補
 
-2. fast pathが失敗してfallbackばかりになる場合
-   - Provider別のrename方式選択
-   - Dispatchers.IO対応
-   - ローディング表示
+2. リネーム中のローディング表示と二重押下防止を強化する
+   - treeUri fallbackでは1秒前後かかるため、処理中であることを明示する
+   - 誤連打や状態不整合を避ける
 
-3. 体感の重さが残る場合
-   - SAF処理のバックグラウンド化
-   - リネーム中の二重押下防止強化
+3. Provider別fast pathスキップを検討する
+   - 同じProviderでUnsupportedOperationが続く場合、次回以降singleUri試行を省略する
+   - ただし削減幅は小さいため、優先度はDispatchers.IOより低い
+
+4. ディレクトリ一覧キャッシュを検討する
+   - `listFiles()` 約886〜936msが主ボトルネック
+   - ただし外部変更、同名チェック、成功後URI更新との整合性設計が必要なため、単機能STEPとして慎重に扱う
 ```

@@ -4,6 +4,7 @@ import android.net.Uri
 import android.os.SystemClock
 import android.util.Log
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import com.example.easyrename.domain.usecase.ExecuteRenameUseCase
 import com.example.easyrename.domain.usecase.ResolveRenameNameUseCase
 import com.example.easyrename.model.AppError
@@ -18,6 +19,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class RenameMatchingViewModel(
     private val resolveRenameNameUseCase: ResolveRenameNameUseCase,
@@ -37,6 +41,8 @@ class RenameMatchingViewModel(
     val uiState: StateFlow<RenameMatchingUiState> = _uiState.asStateFlow()
 
     fun selectTargetFile(fileId: String) {
+        if (_uiState.value.isExecuting) return
+
         _uiState.update { state ->
             val updatedFiles = state.targetFiles.map { file ->
                 file.copy(isSelected = file.id == fileId)
@@ -56,6 +62,8 @@ class RenameMatchingViewModel(
     }
 
     fun selectRenameCandidate(candidateId: String) {
+        if (_uiState.value.isExecuting) return
+
         _uiState.update { state ->
             val updatedCandidates = state.renameCandidates.map { candidate ->
                 candidate.copy(isSelected = candidate.id == candidateId)
@@ -77,61 +85,77 @@ class RenameMatchingViewModel(
     fun executeSelectedRename() {
         val totalStart = SystemClock.elapsedRealtime()
         Log.d(TAG_PERF, "viewModel rename start renameMode=$renameMode")
-        _uiState.update { state ->
-            state.copy(isExecuting = true, error = null)
-        }
-
-        val currentState = _uiState.value
-        val selectedFile = currentState.targetFiles.firstOrNull { it.id == currentState.selectedTargetFileId }
-        val selectedCandidate = currentState.renameCandidates.firstOrNull { it.id == currentState.selectedCandidateId }
-        val selectedDirectoryUri = directoryUri
-
-        if (selectedFile == null || selectedCandidate == null || selectedDirectoryUri == null) {
-            Log.e(LOG_TAG, "RenameMatchingViewModel.executeSelectedRename missingSelection directoryUri=$selectedDirectoryUri")
-            _uiState.update { state ->
-                state.copy(
-                    isExecuting = false,
-                    canExecuteRename = false,
-                    error = AppError.Unknown("Target file, rename candidate, or directory is not selected."),
-                )
-            }
+        if (_uiState.value.isExecuting) {
+            Log.d(TAG_PERF, "viewModel rename ignored because already executing")
             return
         }
 
-        runCatching {
-            val resolvedNewName = resolveRenameNameUseCase(selectedFile, selectedCandidate, renameMode)
-            Log.d(
-                LOG_TAG,
-                "RenameMatchingViewModel.executeSelectedRename selectedRenameMode=$renameMode directoryUri=$selectedDirectoryUri fileUri=${selectedFile.uri} sourceFile.displayName=${selectedFile.displayName} candidate.rawPattern=${selectedCandidate.rawPattern} candidate.displayName=${selectedCandidate.displayName} resolvedNewName=$resolvedNewName",
-            )
-            val renamePair = RenamePair(
-                sourceFile = selectedFile,
-                renameCandidate = selectedCandidate,
-                resolvedNewName = resolvedNewName,
-                directoryUri = selectedDirectoryUri,
-            )
-
-            executeRenameUseCase(renamePair)
-        }.onSuccess { result ->
-            Log.d(
-                LOG_TAG,
-                "RenameMatchingViewModel.renameResult success=${result.success} path=${result.renamePath} sourceFileId=${result.sourceFileId} beforeName=${result.beforeName} afterName=${result.afterName} afterUri=${result.afterUri} errorType=${result.errorType} errorMessage=${result.errorMessage}",
-            )
-            refreshAfterRename(result)
-            Log.d(
-                TAG_PERF,
-                "rename total elapsedMs=${SystemClock.elapsedRealtime() - totalStart} path=${result.renamePath} success=${result.success} errorType=${result.errorType} beforeName=${result.beforeName} afterName=${result.afterName} sourceFileId=${result.sourceFileId} afterUri=${result.afterUri}",
-            )
-        }.onFailure { throwable ->
-            Log.e(LOG_TAG, "RenameMatchingViewModel.executeSelectedRename exceptionClass=${throwable::class.java.simpleName} message=${throwable.message}", throwable)
+        viewModelScope.launch {
+            Log.d(TAG_PERF, "viewModel coroutine start renameMode=$renameMode")
             _uiState.update { state ->
-                state.copy(
-                    isExecuting = false,
-                    error = AppError.Unknown(
-                        detailMessage = throwable.message ?: "Failed to execute rename.",
-                        throwable = throwable,
-                    ),
+                state.copy(isExecuting = true, error = null)
+            }
+
+            val currentState = _uiState.value
+            val selectedFile = currentState.targetFiles.firstOrNull { it.id == currentState.selectedTargetFileId }
+            val selectedCandidate = currentState.renameCandidates.firstOrNull { it.id == currentState.selectedCandidateId }
+            val selectedDirectoryUri = directoryUri
+
+            if (selectedFile == null || selectedCandidate == null || selectedDirectoryUri == null) {
+                Log.e(LOG_TAG, "RenameMatchingViewModel.executeSelectedRename missingSelection directoryUri=$selectedDirectoryUri")
+                _uiState.update { state ->
+                    state.copy(
+                        isExecuting = false,
+                        canExecuteRename = false,
+                        error = AppError.Unknown("Target file, rename candidate, or directory is not selected."),
+                    )
+                }
+                return@launch
+            }
+
+            val ioStart = SystemClock.elapsedRealtime()
+            runCatching {
+                Log.d(TAG_PERF, "viewModel withContext(IO) start")
+                withContext(Dispatchers.IO) {
+                    val resolvedNewName = resolveRenameNameUseCase(selectedFile, selectedCandidate, renameMode)
+                    Log.d(
+                        LOG_TAG,
+                        "RenameMatchingViewModel.executeSelectedRename selectedRenameMode=$renameMode directoryUri=$selectedDirectoryUri fileUri=${selectedFile.uri} sourceFile.displayName=${selectedFile.displayName} candidate.rawPattern=${selectedCandidate.rawPattern} candidate.displayName=${selectedCandidate.displayName} resolvedNewName=$resolvedNewName",
+                    )
+                    val renamePair = RenamePair(
+                        sourceFile = selectedFile,
+                        renameCandidate = selectedCandidate,
+                        resolvedNewName = resolvedNewName,
+                        directoryUri = selectedDirectoryUri,
+                    )
+
+                    executeRenameUseCase(renamePair)
+                }
+            }.onSuccess { result ->
+                Log.d(TAG_PERF, "viewModel withContext(IO) end elapsedMs=${SystemClock.elapsedRealtime() - ioStart}")
+                Log.d(
+                    LOG_TAG,
+                    "RenameMatchingViewModel.renameResult success=${result.success} path=${result.renamePath} sourceFileId=${result.sourceFileId} beforeName=${result.beforeName} afterName=${result.afterName} afterUri=${result.afterUri} errorType=${result.errorType} errorMessage=${result.errorMessage}",
                 )
+                val stateUpdateStart = SystemClock.elapsedRealtime()
+                refreshAfterRename(result)
+                Log.d(TAG_PERF, "viewModel state update after IO elapsedMs=${SystemClock.elapsedRealtime() - stateUpdateStart}")
+                Log.d(
+                    TAG_PERF,
+                    "rename total elapsedMs=${SystemClock.elapsedRealtime() - totalStart} path=${result.renamePath} success=${result.success} errorType=${result.errorType} beforeName=${result.beforeName} afterName=${result.afterName} sourceFileId=${result.sourceFileId} afterUri=${result.afterUri}",
+                )
+            }.onFailure { throwable ->
+                Log.d(TAG_PERF, "viewModel withContext(IO) end elapsedMs=${SystemClock.elapsedRealtime() - ioStart} failure=${throwable::class.java.simpleName}")
+                Log.e(LOG_TAG, "RenameMatchingViewModel.executeSelectedRename exceptionClass=${throwable::class.java.simpleName} message=${throwable.message}", throwable)
+                _uiState.update { state ->
+                    state.copy(
+                        isExecuting = false,
+                        error = AppError.Unknown(
+                            detailMessage = throwable.message ?: "Failed to execute rename.",
+                            throwable = throwable,
+                        ),
+                    )
+                }
             }
         }
     }
