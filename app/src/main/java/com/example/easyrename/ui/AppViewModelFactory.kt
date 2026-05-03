@@ -13,6 +13,7 @@ import com.example.easyrename.domain.usecase.LoadRenameRulesFromCsvUseCase
 import com.example.easyrename.domain.usecase.ResolveRenameNameUseCase
 import com.example.easyrename.domain.usecase.TakePersistablePermissionUseCase
 import com.example.easyrename.domain.usecase.ValidateRenameUseCase
+import com.example.easyrename.model.RenameMode
 import com.example.easyrename.viewmodel.HomeViewModel
 import com.example.easyrename.viewmodel.RenameMatchingViewModel
 
@@ -49,6 +50,7 @@ class AppViewModelFactory(
                         validateRenameUseCase = validateRenameUseCase,
                     ),
                     directoryUri = homeState?.selectedDirectoryUri,
+                    renameMode = homeState?.renameMode ?: RenameMode.Prefix,
                     initialTargetFiles = homeState?.targetFiles.orEmpty(),
                     initialRenameCandidates = homeState?.renameCandidates.orEmpty(),
                 ) as T

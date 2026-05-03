@@ -7,6 +7,7 @@ import com.example.easyrename.domain.usecase.LoadDirectoryFilesUseCase
 import com.example.easyrename.domain.usecase.LoadRenameRulesFromCsvUseCase
 import com.example.easyrename.domain.usecase.TakePersistablePermissionUseCase
 import com.example.easyrename.model.AppError
+import com.example.easyrename.model.RenameMode
 import com.example.easyrename.ui.home.HomeUiState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -32,12 +33,13 @@ class HomeViewModel(
             takePersistablePermissionUseCase.forDirectory(uri)
             loadDirectoryFilesUseCase(uri)
         }.onSuccess { files ->
+            val sortedFiles = files.sortedBy { it.displayName.lowercase() }
             _uiState.update { state ->
                 state.copy(
                     selectedDirectoryUri = uri,
                     selectedDirectoryName = resolveDisplayName(uri),
-                    targetFiles = files,
-                    targetFileCount = files.size,
+                    targetFiles = sortedFiles,
+                    targetFileCount = sortedFiles.size,
                     isReadyToStartMatching = state.selectedCsvFileName != null,
                     isLoading = false,
                     error = null,
@@ -66,12 +68,13 @@ class HomeViewModel(
             val rules = loadRenameRulesFromCsvUseCase(uri)
             generateRenameCandidateUseCase(rules)
         }.onSuccess { candidates ->
+            val sortedCandidates = candidates.sortedBy { it.displayName.lowercase() }
             _uiState.update { state ->
                 state.copy(
                     selectedCsvUri = uri,
                     selectedCsvFileName = resolveDisplayName(uri),
-                    renameCandidates = candidates,
-                    renameCandidateCount = candidates.size,
+                    renameCandidates = sortedCandidates,
+                    renameCandidateCount = sortedCandidates.size,
                     isReadyToStartMatching = state.selectedDirectoryName != null,
                     isLoading = false,
                     error = null,
@@ -87,6 +90,12 @@ class HomeViewModel(
                     ),
                 )
             }
+        }
+    }
+
+    fun onRenameModeSelected(mode: RenameMode) {
+        _uiState.update { state ->
+            state.copy(renameMode = mode)
         }
     }
 

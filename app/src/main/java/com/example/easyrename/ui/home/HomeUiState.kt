@@ -3,6 +3,7 @@ package com.example.easyrename.ui.home
 import android.net.Uri
 import com.example.easyrename.model.AppError
 import com.example.easyrename.model.RenameCandidate
+import com.example.easyrename.model.RenameMode
 import com.example.easyrename.model.RenameTargetFile
 
 data class HomeUiState(
@@ -12,6 +13,7 @@ data class HomeUiState(
     val selectedCsvFileName: String? = null,
     val targetFiles: List<RenameTargetFile> = emptyList(),
     val renameCandidates: List<RenameCandidate> = emptyList(),
+    val renameMode: RenameMode = RenameMode.Prefix,
     val targetFileCount: Int = 0,
     val renameCandidateCount: Int = 0,
     val isReadyToStartMatching: Boolean = false,

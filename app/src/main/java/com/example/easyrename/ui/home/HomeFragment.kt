@@ -6,8 +6,11 @@ import android.util.TypedValue
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.AdapterView
+import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.LinearLayout
+import android.widget.Spinner
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.fragment.app.Fragment
@@ -15,6 +18,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import com.example.easyrename.model.RenameMode
 import com.example.easyrename.ui.AppViewModelFactory
 import com.example.easyrename.ui.MainActivity
 import com.example.easyrename.ui.common.ErrorDialog
@@ -31,6 +35,7 @@ class HomeFragment : Fragment() {
     private lateinit var csvNameText: TextView
     private lateinit var targetFileCountText: TextView
     private lateinit var candidateCountText: TextView
+    private lateinit var renameModeSpinner: Spinner
     private lateinit var startMatchingButton: Button
     private lateinit var loadingView: LoadingView
 
@@ -69,12 +74,19 @@ class HomeFragment : Fragment() {
         val csvButton = Button(context).apply {
             text = "CSVを選択"
             textSize = BODY_TEXT_SIZE_SP
-            setOnClickListener { csvPicker.launch(arrayOf("text/*", "text/csv", "application/vnd.ms-excel")) }
+            setOnClickListener { csvPicker.launch(CSV_MIME_TYPES) }
         }
         directoryNameText = TextView(context).apply { textSize = BODY_TEXT_SIZE_SP }
         csvNameText = TextView(context).apply { textSize = BODY_TEXT_SIZE_SP }
         targetFileCountText = TextView(context).apply { textSize = BODY_TEXT_SIZE_SP }
         candidateCountText = TextView(context).apply { textSize = BODY_TEXT_SIZE_SP }
+        renameModeSpinner = Spinner(context).apply {
+            adapter = ArrayAdapter(
+                context,
+                android.R.layout.simple_spinner_dropdown_item,
+                RenameMode.entries.map { it.displayName },
+            )
+        }
         startMatchingButton = Button(context).apply {
             text = "マッチング画面へ進む"
             textSize = BODY_TEXT_SIZE_SP
@@ -96,6 +108,11 @@ class HomeFragment : Fragment() {
         root.addView(csvNameText)
         root.addView(targetFileCountText)
         root.addView(candidateCountText)
+        root.addView(TextView(context).apply {
+            text = "リネームモード:"
+            textSize = BODY_TEXT_SIZE_SP
+        })
+        root.addView(renameModeSpinner)
         root.addView(startMatchingButton)
         root.addView(loadingView)
 
@@ -109,6 +126,14 @@ class HomeFragment : Fragment() {
             AppViewModelFactory(requireContext()),
         )[HomeViewModel::class.java]
 
+        renameModeSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                viewModel.onRenameModeSelected(RenameMode.entries[position])
+            }
+
+            override fun onNothingSelected(parent: AdapterView<*>?) = Unit
+        }
+
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 viewModel.uiState.collect { state ->
@@ -116,6 +141,10 @@ class HomeFragment : Fragment() {
                     csvNameText.text = "選択中CSV: ${state.selectedCsvFileName ?: "未選択"}"
                     targetFileCountText.text = "読み込み済みファイル数: ${state.targetFileCount}"
                     candidateCountText.text = "読み込み済み候補数: ${state.renameCandidateCount}"
+                    val modePosition = RenameMode.entries.indexOf(state.renameMode)
+                    if (modePosition >= 0 && renameModeSpinner.selectedItemPosition != modePosition) {
+                        renameModeSpinner.setSelection(modePosition)
+                    }
                     startMatchingButton.isEnabled = state.isReadyToStartMatching
                     loadingView.setLoading(state.isLoading)
 
@@ -158,5 +187,12 @@ class HomeFragment : Fragment() {
 
     private companion object {
         const val BODY_TEXT_SIZE_SP = 16f
+        val CSV_MIME_TYPES = arrayOf(
+            "text/csv",
+            "text/comma-separated-values",
+            "text/plain",
+            "application/csv",
+            "application/vnd.ms-excel",
+        )
     }
 }

@@ -8,6 +8,7 @@ import com.example.easyrename.domain.usecase.ResolveRenameNameUseCase
 import com.example.easyrename.model.AppError
 import com.example.easyrename.model.RenameCandidate
 import com.example.easyrename.model.RenameErrorType
+import com.example.easyrename.model.RenameMode
 import com.example.easyrename.model.RenamePair
 import com.example.easyrename.model.RenameResult
 import com.example.easyrename.model.RenameTargetFile
@@ -21,14 +22,15 @@ class RenameMatchingViewModel(
     private val resolveRenameNameUseCase: ResolveRenameNameUseCase,
     private val executeRenameUseCase: ExecuteRenameUseCase,
     private val directoryUri: Uri?,
+    private val renameMode: RenameMode,
     initialTargetFiles: List<RenameTargetFile> = emptyList(),
     initialRenameCandidates: List<RenameCandidate> = emptyList(),
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(
         RenameMatchingUiState(
-            targetFiles = initialTargetFiles,
-            renameCandidates = initialRenameCandidates,
+            targetFiles = initialTargetFiles.sortedBy { it.displayName.lowercase() },
+            renameCandidates = initialRenameCandidates.sortedBy { it.displayName.lowercase() },
         ),
     )
     val uiState: StateFlow<RenameMatchingUiState> = _uiState.asStateFlow()
@@ -94,10 +96,10 @@ class RenameMatchingViewModel(
         }
 
         runCatching {
-            val resolvedNewName = resolveRenameNameUseCase(selectedFile, selectedCandidate)
+            val resolvedNewName = resolveRenameNameUseCase(selectedFile, selectedCandidate, renameMode)
             Log.d(
                 LOG_TAG,
-                "RenameMatchingViewModel.executeSelectedRename directoryUri=$selectedDirectoryUri fileUri=${selectedFile.uri} beforeName=${selectedFile.displayName} afterName=$resolvedNewName",
+                "RenameMatchingViewModel.executeSelectedRename selectedRenameMode=$renameMode directoryUri=$selectedDirectoryUri fileUri=${selectedFile.uri} sourceFile.displayName=${selectedFile.displayName} candidate.rawPattern=${selectedCandidate.rawPattern} candidate.displayName=${selectedCandidate.displayName} resolvedNewName=$resolvedNewName",
             )
             val renamePair = RenamePair(
                 sourceFile = selectedFile,
