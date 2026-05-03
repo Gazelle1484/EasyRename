@@ -1,6 +1,7 @@
 package com.example.easyrename.viewmodel
 
 import android.net.Uri
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import com.example.easyrename.domain.usecase.GenerateRenameCandidateUseCase
 import com.example.easyrename.domain.usecase.LoadDirectoryFilesUseCase
@@ -8,6 +9,7 @@ import com.example.easyrename.domain.usecase.LoadRenameRulesFromCsvUseCase
 import com.example.easyrename.domain.usecase.TakePersistablePermissionUseCase
 import com.example.easyrename.model.AppError
 import com.example.easyrename.model.RenameMode
+import com.example.easyrename.model.RenameResult
 import com.example.easyrename.ui.home.HomeUiState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -82,6 +84,37 @@ class HomeViewModel(
         }
     }
 
+    fun applyRenameResult(result: RenameResult) {
+        if (!result.success) return
+
+        _uiState.update { state ->
+            val updatedFiles = state.targetFiles.map { file ->
+                val shouldUpdate = file.id == result.sourceFileId ||
+                    (result.sourceFileId == null && file.displayName == result.beforeName)
+
+                if (shouldUpdate) {
+                    val updatedUri = result.afterUri ?: file.uri
+                    val updatedFile = file.copy(
+                        id = updatedUri.toString(),
+                        displayName = result.afterName,
+                        uri = updatedUri,
+                        isSelected = false,
+                        isRenamed = true,
+                    )
+                    Log.d(
+                        LOG_TAG,
+                        "HomeViewModel.applyRenameResult sourceFileId=${result.sourceFileId} beforeName=${result.beforeName} afterName=${result.afterName} afterUri=${result.afterUri} updatedUri=${updatedFile.uri}",
+                    )
+                    updatedFile
+                } else {
+                    file.copy(isSelected = false)
+                }
+            }.sortedBy { it.displayName.lowercase() }
+
+            state.copy(targetFiles = updatedFiles)
+        }
+    }
+
     fun onCsvSelected(uri: Uri) {
         _uiState.update { state ->
             state.copy(isLoading = true, error = null)
@@ -135,4 +168,8 @@ class HomeViewModel(
 
     private fun loadSortedDirectoryFiles(uri: Uri) =
         loadDirectoryFilesUseCase(uri).sortedBy { it.displayName.lowercase() }
+
+    private companion object {
+        const val LOG_TAG = "EasyRename"
+    }
 }

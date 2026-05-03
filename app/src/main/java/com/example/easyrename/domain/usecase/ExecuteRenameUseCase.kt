@@ -38,11 +38,12 @@ class ExecuteRenameUseCase(
             LOG_TAG,
             "ExecuteRenameUseCase rename directoryUri=${renamePair.directoryUri} fileUri=${renamePair.sourceFile.uri} beforeName=${renamePair.sourceFile.displayName} afterName=${renamePair.resolvedNewName}",
         )
-        return storageRepository.renameFile(
+        val result = storageRepository.renameFile(
             directoryUri = renamePair.directoryUri,
             fileUri = renamePair.sourceFile.uri,
             newName = renamePair.resolvedNewName,
         )
+        return result.copy(sourceFileId = renamePair.sourceFile.id)
     }
 
     private companion object {

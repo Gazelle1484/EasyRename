@@ -1,3 +1,31 @@
+実機検証結果と、codexの回答から、STEP4-9のプロンプトを生成してください。
+プロンプトはフォーマットに従ってください。
+コードの修正を依頼する場合は、必要な部分から段階を踏んで単機能で依頼すること。
+後に回す機能はメモとして残しておいてください。
+実機で確認するべきログがあれば別途ユーザに指示してください。
+、機能追加に合わせてブランチをcheckout, commit, pushするよう、codexに指示してください。
+## フォーマット　STEP 4-9: 実装（機能単位）
+目的：
+- 1機能ずつ確実に完成させる
+
+指示方法：
+- 「機能単位」で分割して指示する
+
+例：
+- ファイルリネーム処理だけ実装
+- UI表示だけ実装
+- 入力チェックだけ実装
+
+出力させるもの：
+- 実装コード
+- 変更ファイル一覧
+- 動作確認方法
+
+ポイント：
+- 一度に全部やらせない
+- 小さく分割
+
+
 # STEP 4-8: ソートとリネームモード追加 Codex回答
 
 ## 作業ブランチ
@@ -19,6 +47,7 @@
 - `RenameMatchingViewModel` でMatching画面オープン時点の `renameMode` を保持し、リネーム実行時に `ResolveRenameNameUseCase` へ渡すようにした。
 - `ResolveRenameNameUseCase` をRenameMode対応にし、`*` を含む既存CSVは従来ルールを優先するようにした。
 - リネーム名確認用に `EasyRename` ログへ `selectedRenameMode`、元ファイル名、候補、解決後ファイル名を出すようにした。
+- 実機確認後、Replaceモードで `FileNotFound` が出たため、リネーム成功後にHome側のディレクトリ一覧を再読み込みする暫定対策を追加した。
 
 ## 実装コード
 
@@ -62,6 +91,16 @@ val sortedCandidates = candidates.sortedBy { it.displayName.lowercase() }
 ```kotlin
 fun onRenameModeSelected(mode: RenameMode)
 ```
+
+実機確認後、Replaceモードで `FileNotFound` が発生したため、以下も追加した。
+
+```kotlin
+fun refreshSelectedDirectoryFiles()
+```
+
+これは、Prefix / Suffix / Replace のいずれかでリネーム成功した後、Home画面に保持している `targetFiles` のURIが古くなり、次回Matching画面で古いURIを使ってしまう問題を避けるための暫定対策である。
+
+ただし、この方法は選択中ディレクトリを `DocumentFile.listFiles()` で再走査するため、SAF Providerやファイル数によっては体感速度が大きく低下する。
 
 ### HomeFragment.kt
 
@@ -146,9 +185,20 @@ ReplaceではCSV候補に拡張子が含まれる場合も元ファイルの拡�
 
 ### RenameMatchingFragment.kt
 
-変更なし。
+初回実装では変更なし。
 
 表示対象の順序はViewModel側で整える方針にした。Fragmentにソート責務を持たせると、状態更新時や再描画時にUI層へドメイン寄りの判断が漏れるためである。
+
+実機確認後の追加修正として、リネーム成功時に `HomeViewModel.refreshSelectedDirectoryFiles()` を呼び、Home側の対象ファイル一覧を最新化する処理を入れた。
+
+```kotlin
+if (result != lastSyncedSuccessResult) {
+    lastSyncedSuccessResult = result
+    homeViewModel.refreshSelectedDirectoryFiles()
+}
+```
+
+同じ成功結果で再読み込みが重複しないよう、`lastSyncedSuccessResult` でガードしている。
 
 ### その他変更ファイル
 
@@ -163,6 +213,7 @@ ReplaceではCSV候補に拡張子が含まれる場合も元ファイルの拡�
 - `app/src/main/java/com/example/easyrename/ui/home/HomeFragment.kt`
 - `app/src/main/java/com/example/easyrename/ui/AppViewModelFactory.kt`
 - `app/src/main/java/com/example/easyrename/viewmodel/RenameMatchingViewModel.kt`
+- `app/src/main/java/com/example/easyrename/ui/matching/RenameMatchingFragment.kt`
 - `app/src/main/java/com/example/easyrename/domain/usecase/ResolveRenameNameUseCase.kt`
 - `doc/STEP4-8.md`
 - `doc/STEP4-8_codex.md`
@@ -209,6 +260,12 @@ Home画面でリネームモードを選び、Matching画面を開いた時点�
 
 RenameModeをMatching画面オープン時点のスナップショットとして渡したのは、Homeに戻ってから変更した値が次回Matchingに反映されればよい、という要件と一致するためである。リアルタイム同期にすると、Matching画面上でモードが見えないまま結果だけ変わるリスクがあり、今回のUI要件には過剰である。
 
+実機確認後にReplaceモードだけ `FileNotFound` が出た原因は、RenameModeの名前生成ではなく、リネーム成功後にHome側が保持しているファイル一覧のURIが古くなっていたことだと判断した。SAFでは `renameTo` 後にDocument URIの扱いがProvider依存で変わる場合があり、古いURIを次回リネームで使うと、`treeUri` 配下から対象ファイルを再探索できず `FileNotFound` になる。
+
+そのため、暫定対策としてリネーム成功後にディレクトリ一覧を再読み込みする方式を入れた。この方式は正確性を優先した安全側の判断であり、Prefix / Suffix / Replace を連続して試す実機確認では `FileNotFound` を回避できた。
+
+一方で、この対策は全モードのリネーム成功後に `DocumentFile.listFiles()` を再実行するため、SAFのディレクトリ走査コストが毎回発生する。ファイル数が多い、Providerが遅い、端末ストレージ以外を選んでいる、といった条件では操作全体が重くなる。
+
 ## 代替案
 
 - CSV読み込み時にモード別の候補文字列へ変換する
@@ -218,6 +275,11 @@ RenameModeをMatching画面オープン時点のスナップショットとし�
 - BundleでRenameModeをMatchingFragmentへ渡す
   - 有効な条件: Fragment単体で完全に状態復元したい場合。
   - 今回採用しない理由: 既存がActivityスコープのHomeViewModel共有方針であり、データ受け渡しを増やす必要がないため。
+
+- リネーム成功後にディレクトリ全体を再読み込みしない
+  - 有効な条件: リネーム成功後の速度を優先したい場合。
+  - 今回最初に採用しなかった理由: Replaceモードの `FileNotFound` をすぐ止めるには、SAF Providerから最新一覧を取り直す方が確実だったため。
+  - 今後の推奨: 成功した1件だけHome側の状態を更新し、全件再読み込みは手動更新または必要時だけに限定する。
 
 ## 動作確認方法
 
@@ -272,9 +334,11 @@ BUILD SUCCESSFUL
 - 作業開始時のgit status: `develop...origin/develop`、`doc/STEP4-8.md` の未コミット追加あり
 - 作成したブランチ名: `feature/step4-8-rename-mode-sort`
 - commit message: `Add rename mode selection and list sorting`
+- 追加修正commit message: `Refresh directory files after rename`
 - push先ブランチ: `origin/feature/step4-8-rename-mode-sort`
-- commit hash: コミット作成後に最終応答で報告
-- 未コミット差分の有無: コミット後に確認
+- commit hash: `8db50ec`
+- 追加修正commit hash: `8a89c77`
+- 未コミット差分の有無: push後はなし
 
 ## 実機ログ確認手順
 
@@ -307,6 +371,7 @@ adb logcat | findstr EasyRename
 - candidate.displayName
 - resolvedNewName
 - renameTo result=true が維持されているか
+- リネーム成功後のディレクトリ再読み込みで時間がかかっていないか
 ```
 
 ### 5. クラッシュ確認
@@ -340,6 +405,11 @@ adb logcat | findstr "AndroidRuntime EasyRename Exception"
 - CSVのみを完全に表示することも端末によっては保証できないため、CSV / text系MIME typeを優先指定する対応に留めた。
 - `RenameTargetFile` が `android.net.Uri` を持つため、現状のJUnit構成では `ResolveRenameNameUseCase` の純粋単体テストを追加しづらい。後続でテスト容易性を上げるなら、名前解決に使う文字列処理を小さな純Kotlin関数へ分ける案がある。
 - Prefix / SuffixでCSV候補にドットを含む場合、その文字列は候補名の一部として扱われる。最終拡張子は元ファイル側を維持する。
+- 実機確認ではPrefix / Suffix / Replaceの全モードでリネーム実行に成功した。
+- ただし、`FileNotFound` 対策としてリネーム成功後にディレクトリ全体を再読み込みするようにしたため、全モードで動作が遅くなった。
+- 遅さの主因はRenameModeの名前生成ではなく、SAFの `DocumentFile.listFiles()` を毎回実行していることにある。
+- 次STEPでは、成功後に全件再読み込みせず、成功した1件だけHome側の状態を更新する方式へ見直すべきである。
+- `ViewModel` 内のファイルI/O相当処理はまだ `Dispatchers.IO` に逃がしていないため、ファイル数が増えるとUI体感に影響する可能性がある。
 
 ## 次に進めるべきSTEP
 
@@ -352,4 +422,13 @@ adb logcat | findstr "AndroidRuntime EasyRename Exception"
 3. 対象ファイルと候補が辞書順に表示されること。
 4. Homeに戻ってモードを変更し、再度Matchingに入ったときに反映されること。
 
-実機確認後は、自動連番を別状態として追加するSTEPへ進むのがよい。
+実機確認後、Prefix / Suffix / Replaceの全モードは成功した。一方で、成功後に毎回ディレクトリ全体を再読み込みする暫定対策により、全モードで動作が遅くなった。
+
+次に進めるべきSTEPは、自動連番ではなく、まず以下の性能改善である。
+
+1. リネーム成功後の全件再読み込みをやめる。
+2. 成功した1件だけHome側の `targetFiles` から更新または除外する。
+3. SAFの再走査は、手動更新または本当に必要な場合だけ行う。
+4. 必要に応じてファイル読み込み処理を `Dispatchers.IO` に移す。
+
+この性能改善後に、自動連番を別状態として追加するSTEPへ進むのがよい。

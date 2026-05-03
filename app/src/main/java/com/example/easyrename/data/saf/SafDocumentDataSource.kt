@@ -71,6 +71,7 @@ class SafDocumentDataSource(
                 ?: directoryFiles.firstOrNull { it.name == beforeName }
 
             if (targetFile == null) {
+                Log.e(LOG_TAG, "Saf.renameFile FileNotFound directoryUri=$directoryUri fileUri=$fileUri beforeName=$beforeName")
                 return RenameResult(
                     beforeName = beforeName,
                     afterName = newName,
@@ -82,7 +83,7 @@ class SafDocumentDataSource(
 
             Log.d(
                 LOG_TAG,
-                "Saf.target exists=${targetFile.exists()} canWrite=${targetFile.canWrite()} isFile=${targetFile.isFile} name=${targetFile.name} uri=${targetFile.uri}",
+                "Saf.target exists=${targetFile.exists()} canWrite=${targetFile.canWrite()} isFile=${targetFile.isFile} beforeName=${targetFile.name} afterName=$newName uri=${targetFile.uri}",
             )
 
             val duplicateExists = directoryFiles.any { file ->
@@ -99,7 +100,7 @@ class SafDocumentDataSource(
             }
 
             val success = renameToSafely(targetFile, newName, targetFile.name ?: beforeName)
-            Log.d(LOG_TAG, "Saf.renameTo result=${success.success}")
+            Log.d(LOG_TAG, "Saf.renameTo result=${success.success} afterUri=${success.afterUri}")
             success
         } catch (exception: SecurityException) {
             Log.e(LOG_TAG, "Saf.renameFile SecurityException message=${exception.message}", exception)
@@ -175,6 +176,7 @@ class SafDocumentDataSource(
                 success = renameSuccess,
                 errorMessage = if (renameSuccess) null else "RenameFailed: DocumentFile.renameTo returned false.",
                 errorType = if (renameSuccess) null else RenameErrorType.RenameFailed,
+                afterUri = if (renameSuccess) targetFile.uri else null,
             )
         } catch (exception: UnsupportedOperationException) {
             Log.e(LOG_TAG, "Saf.renameTo UnsupportedOperationException message=${exception.message}", exception)

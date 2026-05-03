@@ -112,7 +112,7 @@ class RenameMatchingViewModel(
         }.onSuccess { result ->
             Log.d(
                 LOG_TAG,
-                "RenameMatchingViewModel.renameResult success=${result.success} beforeName=${result.beforeName} afterName=${result.afterName} errorType=${result.errorType} errorMessage=${result.errorMessage}",
+                "RenameMatchingViewModel.renameResult success=${result.success} sourceFileId=${result.sourceFileId} beforeName=${result.beforeName} afterName=${result.afterName} afterUri=${result.afterUri} errorType=${result.errorType} errorMessage=${result.errorMessage}",
             )
             refreshAfterRename(result)
         }.onFailure { throwable ->
@@ -145,11 +145,23 @@ class RenameMatchingViewModel(
 
             val updatedFiles = state.targetFiles.map { file ->
                 if (file.id == state.selectedTargetFileId) {
-                    file.copy(isSelected = false, isRenamed = true)
+                    val updatedUri = result.afterUri ?: file.uri
+                    val updatedFile = file.copy(
+                        id = updatedUri.toString(),
+                        displayName = result.afterName,
+                        uri = updatedUri,
+                        isSelected = false,
+                        isRenamed = true,
+                    )
+                    Log.d(
+                        LOG_TAG,
+                        "RenameMatchingViewModel.updateTargetFile sourceFileId=${result.sourceFileId} beforeName=${result.beforeName} afterName=${result.afterName} afterUri=${result.afterUri} updatedUri=${updatedFile.uri}",
+                    )
+                    updatedFile
                 } else {
                     file.copy(isSelected = false)
                 }
-            }
+            }.sortedBy { it.displayName.lowercase() }
             val updatedCandidates = state.renameCandidates.map { candidate ->
                 if (candidate.id == state.selectedCandidateId) {
                     candidate.copy(isSelected = false, isUsed = true)

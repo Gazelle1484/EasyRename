@@ -138,7 +138,7 @@ class RenameMatchingFragment : Fragment() {
                         if (result.success) {
                             if (result != lastSyncedSuccessResult) {
                                 lastSyncedSuccessResult = result
-                                homeViewModel.refreshSelectedDirectoryFiles()
+                                homeViewModel.applyRenameResult(result)
                             }
                             "成功: ${result.beforeName} -> ${result.afterName} に変更しました。"
                         } else {
