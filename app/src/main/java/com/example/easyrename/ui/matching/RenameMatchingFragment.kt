@@ -1,6 +1,7 @@
 package com.example.easyrename.ui.matching
 
 import android.content.res.ColorStateList
+import android.graphics.Color
 import android.os.Bundle
 import android.util.Log
 import android.util.TypedValue
@@ -11,6 +12,8 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModelProvider
@@ -53,6 +56,21 @@ class RenameMatchingFragment : Fragment() {
             orientation = LinearLayout.VERTICAL
             setPadding(32, 32 + resolveActionBarHeight(), 32, 32)
         }
+        val initialPaddingLeft = root.paddingLeft
+        val initialPaddingTop = root.paddingTop
+        val initialPaddingRight = root.paddingRight
+        val initialPaddingBottom = root.paddingBottom
+        ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
+            val bottomInset = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
+            view.setPadding(
+                initialPaddingLeft,
+                initialPaddingTop,
+                initialPaddingRight,
+                initialPaddingBottom + bottomInset,
+            )
+            Log.d(LOG_TAG, "RenameMatchingFragment.bottomInsetApplied=$bottomInset")
+            insets
+        }
 
         filesContainer = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
@@ -62,6 +80,7 @@ class RenameMatchingFragment : Fragment() {
         }
         executeButton = Button(context).apply {
             text = "リネーム実行"
+            isAllCaps = false
             textSize = BODY_TEXT_SIZE_SP
             isEnabled = false
             backgroundTintList = primaryButtonTint()
@@ -69,12 +88,14 @@ class RenameMatchingFragment : Fragment() {
         }
         backButton = Button(context).apply {
             text = "戻る"
+            isAllCaps = false
             textSize = BODY_TEXT_SIZE_SP
             backgroundTintList = secondaryButtonTint()
             setTextColor(resolveColor(MaterialR.attr.colorOnSecondary))
         }
         autoNumberButton = Button(context).apply {
             text = "自動連番: OFF"
+            isAllCaps = false
             textSize = BODY_TEXT_SIZE_SP
             backgroundTintList = secondaryButtonTint()
             setTextColor(resolveColor(MaterialR.attr.colorOnSecondary))
@@ -191,16 +212,16 @@ class RenameMatchingFragment : Fragment() {
                     resultText.text = if (state.isExecuting) {
                         "リネーム中..."
                     } else {
-                        state.lastResult?.let { result ->
-                        if (result.success) {
-                            if (result != lastSyncedSuccessResult) {
-                                lastSyncedSuccessResult = result
-                                homeViewModel.applyRenameResult(result)
+                        state.selectedPreviewText ?: state.lastResult?.let { result ->
+                            if (result.success) {
+                                if (result != lastSyncedSuccessResult) {
+                                    lastSyncedSuccessResult = result
+                                    homeViewModel.applyRenameResult(result)
+                                }
+                                "成功: ${result.beforeName} -> ${result.afterName} に変更しました。"
+                            } else {
+                                "失敗: ${toResultErrorMessage(result)}"
                             }
-                            "成功: ${result.beforeName} -> ${result.afterName} に変更しました。"
-                        } else {
-                            "失敗: ${toResultErrorMessage(result)}"
-                        }
                         }.orEmpty()
                     }
 
@@ -222,12 +243,19 @@ class RenameMatchingFragment : Fragment() {
             filesContainer.addView(
                 Button(requireContext()).apply {
                     text = buildString {
-                        if (file.isSelected) append("[選択中] ")
                         if (file.isRenamed) append("[リネーム済み] ")
                         append(file.displayName)
                     }
+                    isAllCaps = false
                     isEnabled = !file.isRenamed && !isExecuting
                     textSize = BODY_TEXT_SIZE_SP
+                    backgroundTintList = itemButtonTint(
+                        isSelected = file.isSelected,
+                        isCompleted = file.isRenamed,
+                    )
+                    if (file.isSelected) {
+                        setTextColor(Color.WHITE)
+                    }
                     setOnClickListener { viewModel.selectTargetFile(file.id) }
                 },
             )
@@ -240,12 +268,19 @@ class RenameMatchingFragment : Fragment() {
             candidatesContainer.addView(
                 Button(requireContext()).apply {
                     text = buildString {
-                        if (candidate.isSelected) append("[選択中] ")
                         if (candidate.isUsed) append("[使用済み] ")
                         append(candidate.displayName)
                     }
+                    isAllCaps = false
                     isEnabled = !candidate.isUsed && !isExecuting
                     textSize = BODY_TEXT_SIZE_SP
+                    backgroundTintList = itemButtonTint(
+                        isSelected = candidate.isSelected,
+                        isCompleted = candidate.isUsed,
+                    )
+                    if (candidate.isSelected) {
+                        setTextColor(Color.WHITE)
+                    }
                     setOnClickListener { viewModel.selectRenameCandidate(candidate.id) }
                 },
             )
@@ -324,6 +359,14 @@ class RenameMatchingFragment : Fragment() {
         return ColorStateList.valueOf(resolveColor(MaterialR.attr.colorSecondary))
     }
 
+    private fun itemButtonTint(isSelected: Boolean, isCompleted: Boolean): ColorStateList {
+        return when {
+            isSelected -> primaryButtonTint()
+            isCompleted -> ColorStateList.valueOf(resolveColor(android.R.attr.colorControlNormal))
+            else -> ColorStateList.valueOf(resolveColor(android.R.attr.colorButtonNormal))
+        }
+    }
+
     private fun resolveColor(attribute: Int): Int {
         val typedValue = TypedValue()
         requireContext().theme.resolveAttribute(attribute, typedValue, true)
@@ -331,6 +374,7 @@ class RenameMatchingFragment : Fragment() {
     }
 
     private companion object {
+        const val LOG_TAG = "EasyRename"
         const val TAG_PERF = "EasyRenamePerf"
         const val BODY_TEXT_SIZE_SP = 16f
         const val HEADING_TEXT_SIZE_SP = 18f

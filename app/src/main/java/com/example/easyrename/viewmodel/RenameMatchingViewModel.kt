@@ -47,7 +47,8 @@ class RenameMatchingViewModel(
         _uiState.update { state ->
             val enabled = !state.isAutoNumberingEnabled
             Log.d(LOG_TAG, "RenameMatchingViewModel.toggleAutoNumbering enabled=$enabled")
-            state.copy(isAutoNumberingEnabled = enabled, error = null)
+            val updatedState = state.copy(isAutoNumberingEnabled = enabled, error = null)
+            updatedState.copy(selectedPreviewText = buildSelectedPreviewText(updatedState))
         }
     }
 
@@ -60,7 +61,7 @@ class RenameMatchingViewModel(
             }
             val selectedTargetFileId = updatedFiles.firstOrNull { it.isSelected }?.id
 
-            state.copy(
+            val updatedState = state.copy(
                 targetFiles = updatedFiles,
                 selectedTargetFileId = selectedTargetFileId,
                 canExecuteRename = canExecuteRename(
@@ -69,6 +70,7 @@ class RenameMatchingViewModel(
                 ),
                 error = null,
             )
+            updatedState.copy(selectedPreviewText = buildSelectedPreviewText(updatedState))
         }
     }
 
@@ -81,7 +83,7 @@ class RenameMatchingViewModel(
             }
             val selectedCandidateId = updatedCandidates.firstOrNull { it.isSelected }?.id
 
-            state.copy(
+            val updatedState = state.copy(
                 renameCandidates = updatedCandidates,
                 selectedCandidateId = selectedCandidateId,
                 canExecuteRename = canExecuteRename(
@@ -90,6 +92,7 @@ class RenameMatchingViewModel(
                 ),
                 error = null,
             )
+            updatedState.copy(selectedPreviewText = buildSelectedPreviewText(updatedState))
         }
     }
 
@@ -211,6 +214,7 @@ class RenameMatchingViewModel(
                 return@update state.copy(
                     isExecuting = false,
                     lastResult = result,
+                    selectedPreviewText = null,
                     error = toAppError(result),
                 )
             }
@@ -251,6 +255,7 @@ class RenameMatchingViewModel(
                 selectedTargetFileId = null,
                 selectedCandidateId = null,
                 canExecuteRename = false,
+                selectedPreviewText = null,
                 isExecuting = false,
                 lastResult = result,
                 error = null,
@@ -291,6 +296,30 @@ class RenameMatchingViewModel(
         selectedCandidateId: String?,
     ): Boolean {
         return selectedTargetFileId != null && selectedCandidateId != null
+    }
+
+    private fun buildSelectedPreviewText(state: RenameMatchingUiState): String? {
+        val selectedFile = state.targetFiles.firstOrNull { it.id == state.selectedTargetFileId }
+        val selectedCandidate = state.renameCandidates.firstOrNull { it.id == state.selectedCandidateId }
+        if (selectedFile == null || selectedCandidate == null) return null
+
+        val previewAutoNumber = if (state.isAutoNumberingEnabled) {
+            autoNumberCounters[selectedCandidate.rawPattern] ?: INITIAL_AUTO_NUMBER
+        } else {
+            null
+        }
+        val resolvedNewName = resolveRenameNameUseCase(
+            sourceFile = selectedFile,
+            candidate = selectedCandidate,
+            renameMode = renameMode,
+            autoNumber = previewAutoNumber,
+        )
+        val previewText = "選択中：${selectedFile.displayName} -> $resolvedNewName"
+        Log.d(
+            LOG_TAG,
+            "RenameMatchingViewModel.preview selectedTargetFile.displayName=${selectedFile.displayName} selectedCandidate.displayName=${selectedCandidate.displayName} selectedPreviewText=$previewText isAutoNumberingEnabled=${state.isAutoNumberingEnabled} previewAutoNumber=$previewAutoNumber displayNamePreserveCase=true",
+        )
+        return previewText
     }
 
     private companion object {

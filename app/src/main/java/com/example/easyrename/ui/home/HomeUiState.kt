@@ -21,5 +21,8 @@ data class HomeUiState(
     val renameCandidateCount: Int = 0,
     val isReadyToStartMatching: Boolean = false,
     val isLoading: Boolean = false,
+    val hasMatchingPreparationFailed: Boolean = false,
+    val isStartMatchingActionArmed: Boolean = false,
+    val selectionRevision: Long = 0L,
     val error: AppError? = null,
 )

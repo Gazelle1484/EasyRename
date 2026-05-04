@@ -44,7 +44,7 @@ class HomeViewModel(
 
     fun onDirectorySelected(uri: Uri) {
         _uiState.update { state ->
-            state.copy(isLoading = true, error = null)
+            state.copy(isLoading = true, hasMatchingPreparationFailed = false, error = null)
         }
 
         runCatching {
@@ -59,6 +59,8 @@ class HomeViewModel(
                     targetFileCount = files.size,
                     isReadyToStartMatching = state.selectedCsvFileName != null,
                     isLoading = false,
+                    hasMatchingPreparationFailed = false,
+                    isStartMatchingActionArmed = state.selectedCsvUri != null,
                     error = null,
                 )
             }
@@ -142,7 +144,7 @@ class HomeViewModel(
 
     fun onCsvSelected(uri: Uri) {
         _uiState.update { state ->
-            state.copy(isLoading = true, error = null)
+            state.copy(isLoading = true, hasMatchingPreparationFailed = false, error = null)
         }
 
         runCatching {
@@ -159,6 +161,8 @@ class HomeViewModel(
                     renameCandidateCount = sortedCandidates.size,
                     isReadyToStartMatching = state.selectedDirectoryName != null,
                     isLoading = false,
+                    hasMatchingPreparationFailed = false,
+                    isStartMatchingActionArmed = state.selectedDirectoryUri != null,
                     error = null,
                 )
             }
@@ -185,6 +189,7 @@ class HomeViewModel(
                 state.copy(
                     error = AppError.Unknown("Saved directory or CSV URI is invalid."),
                     isReadyToStartMatching = false,
+                    hasMatchingPreparationFailed = true,
                 )
             }
             return
@@ -195,7 +200,7 @@ class HomeViewModel(
             "HomeViewModel.selectLastUsedSet directoryUri=$directoryUri csvUri=$csvUri",
         )
         _uiState.update { state ->
-            state.copy(
+            val updatedState = state.copy(
                 selectedDirectoryUri = directoryUri,
                 selectedCsvUri = csvUri,
                 selectedDirectoryName = lastUsedSet.directoryDisplayName,
@@ -205,8 +210,16 @@ class HomeViewModel(
                 targetFileCount = 0,
                 renameCandidateCount = 0,
                 isReadyToStartMatching = true,
+                hasMatchingPreparationFailed = false,
+                isStartMatchingActionArmed = true,
+                selectionRevision = state.selectionRevision + 1,
                 error = null,
             )
+            Log.d(
+                LOG_TAG,
+                "HomeViewModel.selectLastUsedSet updated selectedDirectoryUri=${updatedState.selectedDirectoryUri} selectedCsvUri=${updatedState.selectedCsvUri} selectedDirectoryName=${updatedState.selectedDirectoryName} selectedCsvFileName=${updatedState.selectedCsvFileName} isReadyToStartMatching=${updatedState.isReadyToStartMatching} isLoading=${updatedState.isLoading} targetFileCount=${updatedState.targetFileCount} renameCandidateCount=${updatedState.renameCandidateCount} selectionRevision=${updatedState.selectionRevision}",
+            )
+            updatedState
         }
     }
 
@@ -223,6 +236,7 @@ class HomeViewModel(
             _uiState.update { state ->
                 state.copy(
                     isReadyToStartMatching = false,
+                    hasMatchingPreparationFailed = true,
                     error = AppError.Unknown("Directory and CSV must be selected before matching."),
                 )
             }
@@ -232,7 +246,7 @@ class HomeViewModel(
         viewModelScope.launch {
             Log.d(LOG_TAG, "HomeViewModel.prepareMatchingData start directoryUri=$directoryUri csvUri=$csvUri")
             _uiState.update { state ->
-                state.copy(isLoading = true, error = null)
+                state.copy(isLoading = true, hasMatchingPreparationFailed = false, error = null)
             }
 
             runCatching {
@@ -264,6 +278,8 @@ class HomeViewModel(
                         isLastUsedSetAvailable = true,
                         isReadyToStartMatching = true,
                         isLoading = false,
+                        hasMatchingPreparationFailed = false,
+                        isStartMatchingActionArmed = true,
                         error = null,
                     )
                 }
@@ -273,6 +289,7 @@ class HomeViewModel(
                 _uiState.update { state ->
                     state.copy(
                         isLoading = false,
+                        hasMatchingPreparationFailed = true,
                         error = AppError.Unknown(
                             detailMessage = throwable.message ?: "Failed to prepare matching data.",
                             throwable = throwable,
@@ -286,6 +303,15 @@ class HomeViewModel(
     fun onRenameModeSelected(mode: RenameMode) {
         _uiState.update { state ->
             state.copy(renameMode = mode)
+        }
+    }
+
+    fun resetStartMatchingAction() {
+        _uiState.update { state ->
+            state.copy(
+                isStartMatchingActionArmed = false,
+                hasMatchingPreparationFailed = false,
+            )
         }
     }
 
