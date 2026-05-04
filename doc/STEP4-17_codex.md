@@ -27,6 +27,7 @@ AM doc/STEP4-17.md
 - リネーム成功時のみ連番カウンタを `指定番号 + 1` に進める既存仕様を維持しました。
 - リネーム失敗時は連番カウンタを進めない既存仕様を維持しました。
 - 自動連番OFF時は「変更」ボタンを非表示にし、既存どおり番号なしのリネーム動作を維持しました。
+- 追加修正として、3ボタンナビゲーション使用時にマッチング画面下部メッセージ行と `LoadingView` がナビゲーションバーに重なる問題を修正しました。
 
 ## 実装コード
 
@@ -109,6 +110,30 @@ numberInput.error = "1以上の数字を入力してください"
 [ 1 ]
 ```
 
+追加修正として、下部メッセージ行と `LoadingView` を `bottomContentContainer` にまとめ、ナビゲーションバーの高さ分だけ `bottomMargin` を加算するようにしました。
+
+```kotlin
+private fun applyNavigationBarBottomMargin(insetsSource: View, target: View)
+```
+
+当初はrootへbottom paddingを足していましたが、今回の画面構造では下部メッセージエリア自体が画面下端側に配置されており、root paddingだけでは対象Viewそのものが十分に上へ逃げませんでした。成功した方式は、rootまたはdecorViewから `RootWindowInsets` を取得し、実際に重なっていた `bottomContentContainer` の `bottomMargin` へ反映する方法です。
+
+```text
+root / decorView の RootWindowInsets を取得
+→ navigationBars / systemBars のbottomの大きい方を使う
+→ bottomContentContainer.bottomMargin に加算
+```
+
+一時的に `EasyRenameInsets` ログで確認し、実機では以下のように `bottomInset` と `appliedBottomMargin` が一致することを確認しました。
+
+```text
+navigationBottomInset=117
+systemBottomInset=117
+appliedBottomMargin=117
+```
+
+確認後、一時ログは削除しています。
+
 ### ResolveRenameNameUseCase.kt
 
 変更なし。
@@ -170,6 +195,7 @@ UI層 Fragment
   - 責務: 下部プレビュー表示、「変更」ボタン、番号入力ダイアログ。
   - 自動連番OFF、未選択、実行中では「変更」ボタンを表示しない、または押せないようにします。
   - 入力検証はUIで行い、不正値をViewModelへ渡さないようにします。
+  - 下部メッセージエリアは `bottomContentContainer` にまとめ、3ボタンナビゲーションと重ならないよう `bottomMargin` でInsetsを反映します。
 
 - `ResolveRenameNameUseCase`
   - 責務: 元ファイル名、候補、RenameMode、自動連番番号から最終ファイル名を生成。
@@ -185,6 +211,8 @@ UI層 Fragment
 
 `ResolveRenameNameUseCase` を変更しなかった理由は、既に自動連番番号をnullableで受け取れる設計になっており、Prefix / Suffix / Replace と `*` 互換の合成ルールが集約されているためです。ここを再実装しないことで、DRYとKISSを維持しています。
 
+下部メッセージのナビゲーションバー重なり対応で `paddingBottom` ではなく `bottomMargin` を採用した理由は、今回重なっていたのがリスト末尾ではなく、画面下部に固定的に配置されるメッセージコンテナだったためです。paddingはコンテナ内部の余白を増やしますが、コンテナ自体の下端位置は上がりません。marginならコンテナ自体をナビゲーションバー領域の上に押し上げられるため、今回の症状に合っています。
+
 ## 代替案
 
 - Fragment側でプレビュー文字列から番号部分を解析して置換する
@@ -194,6 +222,10 @@ UI層 Fragment
 - 自動連番開始番号をRepositoryやSharedPreferencesへ永続化する
   - 有効な条件: アプリ再起動後も候補ごとの次番号を維持したい場合。
   - 今回採用しない理由: STEP4-17の対象は画面セッション内の開始番号指定です。永続化を入れると前回セット記憶とは別の状態管理が増え、今回の範囲を超えます。
+
+- rootのbottom paddingだけでナビゲーションバーを避ける
+  - 有効な条件: root直下の通常フロー内コンテンツ全体がpadding内に収まる場合。
+  - 今回採用しない理由: 下部メッセージコンテナ自体が下端側に配置され、paddingだけでは対象Viewが十分に上へ移動しなかったため。
 
 ## 動作確認方法
 
@@ -220,6 +252,8 @@ UI層 Fragment
 20. 自動連番OFF時、既存どおり `-番号` なしでリネームされることを確認する
 21. Prefix / Suffix / Replace それぞれで指定番号が期待位置に反映されることを確認する
 22. `A1-1_*` 形式のCSVでも既存互換が壊れていないことを確認する
+23. 3ボタンナビゲーションで下部メッセージ行がナビゲーションボタンに重ならないことを確認する
+24. LoadingView表示中もナビゲーションボタンに重ならないことを確認する
 ```
 
 ## ビルド確認結果
@@ -282,9 +316,9 @@ AM doc/STEP4-17.md
 - 分岐元ブランチ: `feature/step4-16-matching-ui-display`
 - 実機確認前のビルド結果: `assembleDebug` / `testDebugUnitTest` ともに `BUILD SUCCESSFUL`
 - 実機確認結果: ユーザー確認OK
-- commit hash: 未作成
-- push先ブランチ: 未push
-- 未コミット差分: あり
+- commit hash: `8015cbd Add auto number start selection`
+- push先ブランチ: `origin/feature/step4-17-auto-number-start`
+- 未コミット差分: 下部メッセージエリアのInsets追加修正あり
 
 ## 実機ログ確認手順
 
@@ -329,6 +363,7 @@ C:\Users\gazel\AppData\Local\Android\Sdk\platform-tools\adb.exe logcat | findstr
 - リネーム失敗時は autoNumberCounter success=false で counterAfter が変わらないこと
 - 自動連番OFF時に autoNumber=null でリネームされること
 - AndroidRuntime のクラッシュログが出ていないこと
+- 3ボタンナビゲーションで下部メッセージ行とLoadingViewが重ならないこと
 ```
 
 ## 後に回す機能メモ
@@ -360,16 +395,17 @@ C:\Users\gazel\AppData\Local\Android\Sdk\platform-tools\adb.exe logcat | findstr
 - 自動連番の次番号は画面セッション内のViewModel状態です。アプリ再起動後やMatching画面作り直し後の永続化は今回対象外です。
 - ファイルピッカー復帰や画面回転時の完全な状態復元は今回対象外です。
 - 「変更」ボタンを下部行に追加したため、長いプレビュー文字列では横幅が狭くなる可能性があります。必要なら後続STEPで折り返しやレイアウト調整を検討します。
+- 下部メッセージエリアのInsets対応は、Android 15 / targetSdk 36 のEdge-to-Edge挙動を踏まえ、対象Viewの `bottomMargin` へ反映しています。将来XML/RecyclerView化する場合は、下部固定エリアとスクロール領域でInsets適用先を再確認してください。
 
 ## 次に進めるべきSTEP
 
-実機確認OK後に以下を実行します。
+下部メッセージエリアの追加修正を確認後、必要に応じて追加commitします。
 
 ```powershell
 git status
 git add .
-git commit -m "Add auto number start selection"
-git push -u origin feature/step4-17-auto-number-start
+git commit -m "Avoid bottom message navigation overlap"
+git push
 ```
 
 次の候補は、今回後回しにした以下です。

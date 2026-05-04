@@ -48,6 +48,7 @@ class RenameMatchingFragment : Fragment() {
     private lateinit var autoNumberButton: Button
     private lateinit var resultText: TextView
     private lateinit var changeAutoNumberButton: Button
+    private lateinit var bottomContentContainer: LinearLayout
     private lateinit var loadingView: LoadingView
     private var lastShownErrorMessage: String? = null
     private var lastSyncedSuccessResult: RenameResult? = null
@@ -62,22 +63,6 @@ class RenameMatchingFragment : Fragment() {
             orientation = LinearLayout.VERTICAL
             setPadding(32, 32 + resolveActionBarHeight(), 32, 32)
         }
-        val initialPaddingLeft = root.paddingLeft
-        val initialPaddingTop = root.paddingTop
-        val initialPaddingRight = root.paddingRight
-        val initialPaddingBottom = root.paddingBottom
-        ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
-            val bottomInset = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
-            view.setPadding(
-                initialPaddingLeft,
-                initialPaddingTop,
-                initialPaddingRight,
-                initialPaddingBottom + bottomInset,
-            )
-            Log.d(LOG_TAG, "RenameMatchingFragment.bottomInsetApplied=$bottomInset")
-            insets
-        }
-
         filesContainer = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
         }
@@ -118,6 +103,9 @@ class RenameMatchingFragment : Fragment() {
             setTextColor(resolveColor(MaterialR.attr.colorOnSecondary))
         }
         loadingView = LoadingView(context)
+        bottomContentContainer = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+        }
 
         root.addView(
             LinearLayout(context).apply {
@@ -155,7 +143,7 @@ class RenameMatchingFragment : Fragment() {
                 1f,
             ),
         )
-        root.addView(
+        bottomContentContainer.addView(
             LinearLayout(context).apply {
                 orientation = LinearLayout.HORIZONTAL
                 addView(
@@ -170,7 +158,9 @@ class RenameMatchingFragment : Fragment() {
                 )
             },
         )
-        root.addView(loadingView)
+        bottomContentContainer.addView(loadingView)
+        root.addView(bottomContentContainer)
+        applyNavigationBarBottomMargin(root, bottomContentContainer)
 
         return root
     }
@@ -371,6 +361,54 @@ class RenameMatchingFragment : Fragment() {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 1f,
             )
+        }
+    }
+
+    private fun applyNavigationBarBottomMargin(insetsSource: View, target: View) {
+        val initialBottomMargin = (target.layoutParams as ViewGroup.MarginLayoutParams).bottomMargin
+
+        fun applyBottomMarginFromRootInsets() {
+            val rootInsets = ViewCompat.getRootWindowInsets(insetsSource)
+                ?: ViewCompat.getRootWindowInsets(requireActivity().window.decorView)
+                ?: return
+
+            val navigationBottomInset = rootInsets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
+            val systemBottomInset = rootInsets.getInsets(WindowInsetsCompat.Type.systemBars()).bottom
+            val bottomInset = maxOf(
+                navigationBottomInset,
+                systemBottomInset,
+            )
+            val layoutParams = target.layoutParams as ViewGroup.MarginLayoutParams
+            layoutParams.bottomMargin = initialBottomMargin + bottomInset
+            target.layoutParams = layoutParams
+        }
+
+        ViewCompat.setOnApplyWindowInsetsListener(insetsSource) { _, insets ->
+            val navigationBottomInset = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
+            val systemBottomInset = insets.getInsets(WindowInsetsCompat.Type.systemBars()).bottom
+            val bottomInset = maxOf(navigationBottomInset, systemBottomInset)
+            val layoutParams = target.layoutParams as ViewGroup.MarginLayoutParams
+            layoutParams.bottomMargin = initialBottomMargin + bottomInset
+            target.layoutParams = layoutParams
+            insets
+        }
+
+        insetsSource.addOnAttachStateChangeListener(
+            object : View.OnAttachStateChangeListener {
+                override fun onViewAttachedToWindow(view: View) {
+                    ViewCompat.requestApplyInsets(view)
+                    ViewCompat.requestApplyInsets(requireActivity().window.decorView)
+                    view.post {
+                        applyBottomMarginFromRootInsets()
+                    }
+                }
+
+                override fun onViewDetachedFromWindow(view: View) = Unit
+            },
+        )
+        insetsSource.post {
+            ViewCompat.requestApplyInsets(insetsSource)
+            applyBottomMarginFromRootInsets()
         }
     }
 
