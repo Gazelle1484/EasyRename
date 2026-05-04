@@ -143,6 +143,21 @@ class RenameMatchingViewModel(
         }
     }
 
+    fun onUndoClicked() {
+        val latest = renameHistoryManager.getLatest()
+        if (latest == null) {
+            Log.d(TAG_HISTORY, "undo clicked but history is empty")
+            updateUndoState()
+            return
+        }
+
+        Log.d(
+            TAG_HISTORY,
+            "undo clicked latest beforeName=${latest.beforeName} afterName=${latest.afterName} beforeUri=${latest.beforeUri} afterUri=${latest.afterUri} renameMode=${latest.renameMode} autoNumber=${latest.autoNumber}",
+        )
+        updateUndoState()
+    }
+
     fun executeSelectedRename() {
         val totalStart = SystemClock.elapsedRealtime()
         Log.d(TAG_PERF, "viewModel rename start renameMode=$renameMode")
@@ -434,6 +449,19 @@ class RenameMatchingViewModel(
             autoNumber = autoNumber,
         )
         renameHistoryManager.add(record)
+    }
+
+    private fun updateUndoState() {
+        _uiState.update { state ->
+            state.copy(
+                canUndo = renameHistoryManager.getLatest() != null,
+                renameHistoryCount = renameHistoryManager.size(),
+            )
+        }
+        Log.d(
+            TAG_HISTORY,
+            "undo state updated canUndo=${renameHistoryManager.getLatest() != null} historySize=${renameHistoryManager.size()}",
+        )
     }
 
     private fun getSelectedAutoNumber(state: RenameMatchingUiState): Int? {

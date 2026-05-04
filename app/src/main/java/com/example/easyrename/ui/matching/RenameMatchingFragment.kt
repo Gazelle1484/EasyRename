@@ -46,6 +46,7 @@ class RenameMatchingFragment : Fragment() {
     private lateinit var executeButton: Button
     private lateinit var backButton: Button
     private lateinit var autoNumberButton: Button
+    private lateinit var undoButton: Button
     private lateinit var resultText: TextView
     private lateinit var changeAutoNumberButton: Button
     private lateinit var bottomContentContainer: LinearLayout
@@ -90,6 +91,14 @@ class RenameMatchingFragment : Fragment() {
             textSize = BODY_TEXT_SIZE_SP
             backgroundTintList = primaryButtonTint()
             setTextColor(resolveColor(MaterialR.attr.colorOnPrimary))
+        }
+        undoButton = Button(context).apply {
+            text = "UNDO"
+            isAllCaps = false
+            textSize = BODY_TEXT_SIZE_SP
+            isEnabled = false
+            backgroundTintList = secondaryButtonTint()
+            setTextColor(resolveColor(MaterialR.attr.colorOnSecondary))
         }
         resultText = TextView(context).apply {
             textSize = BODY_TEXT_SIZE_SP
@@ -158,7 +167,21 @@ class RenameMatchingFragment : Fragment() {
                 )
             },
         )
-        bottomContentContainer.addView(loadingView)
+        bottomContentContainer.addView(
+            LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                addView(
+                    undoButton,
+                    LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                        marginEnd = 8
+                    },
+                )
+                addView(
+                    loadingView,
+                    LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f),
+                )
+            },
+        )
         root.addView(bottomContentContainer)
         applyNavigationBarBottomMargin(root, bottomContentContainer)
 
@@ -197,6 +220,9 @@ class RenameMatchingFragment : Fragment() {
         changeAutoNumberButton.setOnClickListener {
             showAutoNumberDialog()
         }
+        undoButton.setOnClickListener {
+            viewModel.onUndoClicked()
+        }
 
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -230,6 +256,12 @@ class RenameMatchingFragment : Fragment() {
                         ),
                     )
                     loadingView.setLoading(state.isExecuting)
+                    undoButton.isEnabled = state.canUndo && !state.isExecuting
+                    undoButton.text = if (state.renameHistoryCount > 0) {
+                        "UNDO (${state.renameHistoryCount})"
+                    } else {
+                        "UNDO"
+                    }
                     val shouldShowChangeButton = state.isAutoNumberingEnabled &&
                         state.selectedTargetFileId != null &&
                         state.selectedCandidateId != null &&
