@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import com.example.easyrename.data.csv.CsvRuleParser
+import com.example.easyrename.data.preferences.LastUsedSetStore
 import com.example.easyrename.data.repository.StorageRepositoryImpl
 import com.example.easyrename.data.saf.SafDocumentDataSource
 import com.example.easyrename.domain.usecase.ExecuteRenameUseCase
@@ -39,6 +40,7 @@ class AppViewModelFactory(
                 ),
                 generateRenameCandidateUseCase = GenerateRenameCandidateUseCase(),
                 takePersistablePermissionUseCase = TakePersistablePermissionUseCase(repository),
+                lastUsedSetStore = LastUsedSetStore(applicationContext),
             ) as T
 
             modelClass.isAssignableFrom(RenameMatchingViewModel::class.java) -> {

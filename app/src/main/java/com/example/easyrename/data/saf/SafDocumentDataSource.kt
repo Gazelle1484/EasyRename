@@ -22,7 +22,7 @@ class SafDocumentDataSource(
     fun loadFilesInDirectory(directoryUri: Uri): List<RenameTargetFile> {
         val directory = DocumentFile.fromTreeUri(context, directoryUri) ?: return emptyList()
 
-        return directory
+        val files = directory
             .listFiles()
             .filter { it.isFile }
             .map { file ->
@@ -34,6 +34,8 @@ class SafDocumentDataSource(
                     lastModified = file.lastModified(),
                 )
             }
+        Log.d(LOG_TAG, "loadFilesInDirectory metadataOnly=true fileCount=${files.size} directoryUri=$directoryUri")
+        return files
     }
 
     fun readTextFromUri(uri: Uri): String {

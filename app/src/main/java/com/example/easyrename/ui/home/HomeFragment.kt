@@ -31,6 +31,7 @@ import kotlinx.coroutines.launch
 class HomeFragment : Fragment() {
 
     private lateinit var viewModel: HomeViewModel
+    private lateinit var lastUsedSetButton: Button
     private lateinit var directoryNameText: TextView
     private lateinit var csvNameText: TextView
     private lateinit var targetFileCountText: TextView
@@ -66,6 +67,12 @@ class HomeFragment : Fragment() {
             setPadding(32, 32 + resolveActionBarHeight(), 32, 32)
         }
 
+        lastUsedSetButton = Button(context).apply {
+            text = "前回のセット: なし"
+            textSize = BODY_TEXT_SIZE_SP
+            isEnabled = false
+            setOnClickListener { viewModel.selectLastUsedSet() }
+        }
         val directoryButton = Button(context).apply {
             text = "ディレクトリを選択"
             textSize = BODY_TEXT_SIZE_SP
@@ -94,14 +101,17 @@ class HomeFragment : Fragment() {
             backgroundTintList = primaryButtonTint()
             setTextColor(resolveColor(MaterialR.attr.colorOnPrimary))
             setOnClickListener {
-                parentFragmentManager.beginTransaction()
-                    .replace(MainActivity.FRAGMENT_CONTAINER_ID, RenameMatchingFragment())
-                    .addToBackStack(null)
-                    .commit()
+                viewModel.prepareMatchingData {
+                    parentFragmentManager.beginTransaction()
+                        .replace(MainActivity.FRAGMENT_CONTAINER_ID, RenameMatchingFragment())
+                        .addToBackStack(null)
+                        .commit()
+                }
             }
         }
         loadingView = LoadingView(context)
 
+        root.addView(lastUsedSetButton)
         root.addView(directoryButton)
         root.addView(csvButton)
         root.addView(directoryNameText)
@@ -137,6 +147,10 @@ class HomeFragment : Fragment() {
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 viewModel.uiState.collect { state ->
+                    lastUsedSetButton.text = state.lastUsedSet?.let { lastUsedSet ->
+                        "前回のセット: ${lastUsedSet.directoryDisplayName} / ${lastUsedSet.csvDisplayName}"
+                    } ?: "前回のセット: なし"
+                    lastUsedSetButton.isEnabled = state.isLastUsedSetAvailable && !state.isLoading
                     directoryNameText.text = "選択中ディレクトリ: ${state.selectedDirectoryName ?: "未選択"}"
                     csvNameText.text = "選択中CSV: ${state.selectedCsvFileName ?: "未選択"}"
                     targetFileCountText.text = "読み込み済みファイル数: ${state.targetFileCount}"
@@ -145,7 +159,7 @@ class HomeFragment : Fragment() {
                     if (modePosition >= 0 && renameModeSpinner.selectedItemPosition != modePosition) {
                         renameModeSpinner.setSelection(modePosition)
                     }
-                    startMatchingButton.isEnabled = state.isReadyToStartMatching
+                    startMatchingButton.isEnabled = state.isReadyToStartMatching && !state.isLoading
                     loadingView.setLoading(state.isLoading)
 
                     state.error?.let { error ->

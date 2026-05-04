@@ -4,27 +4,42 @@ import android.net.Uri
 import android.os.SystemClock
 import android.util.Log
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.example.easyrename.data.preferences.LastUsedSetStore
 import com.example.easyrename.domain.usecase.GenerateRenameCandidateUseCase
 import com.example.easyrename.domain.usecase.LoadDirectoryFilesUseCase
 import com.example.easyrename.domain.usecase.LoadRenameRulesFromCsvUseCase
 import com.example.easyrename.domain.usecase.TakePersistablePermissionUseCase
 import com.example.easyrename.model.AppError
+import com.example.easyrename.model.LastUsedSet
 import com.example.easyrename.model.RenameMode
 import com.example.easyrename.model.RenameResult
 import com.example.easyrename.ui.home.HomeUiState
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class HomeViewModel(
     private val loadDirectoryFilesUseCase: LoadDirectoryFilesUseCase,
     private val loadRenameRulesFromCsvUseCase: LoadRenameRulesFromCsvUseCase,
     private val generateRenameCandidateUseCase: GenerateRenameCandidateUseCase,
     private val takePersistablePermissionUseCase: TakePersistablePermissionUseCase,
+    private val lastUsedSetStore: LastUsedSetStore,
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(HomeUiState())
+    private val _uiState = MutableStateFlow(
+        HomeUiState().let { state ->
+            val lastUsedSet = lastUsedSetStore.load()
+            state.copy(
+                lastUsedSet = lastUsedSet,
+                isLastUsedSetAvailable = lastUsedSet != null,
+            )
+        },
+    )
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
     fun onDirectorySelected(uri: Uri) {
@@ -160,6 +175,114 @@ class HomeViewModel(
         }
     }
 
+    fun selectLastUsedSet() {
+        val lastUsedSet = _uiState.value.lastUsedSet ?: return
+        val directoryUri = runCatching { Uri.parse(lastUsedSet.directoryUriString) }.getOrNull()
+        val csvUri = runCatching { Uri.parse(lastUsedSet.csvUriString) }.getOrNull()
+
+        if (directoryUri == null || csvUri == null) {
+            _uiState.update { state ->
+                state.copy(
+                    error = AppError.Unknown("Saved directory or CSV URI is invalid."),
+                    isReadyToStartMatching = false,
+                )
+            }
+            return
+        }
+
+        Log.d(
+            LOG_TAG,
+            "HomeViewModel.selectLastUsedSet directoryUri=$directoryUri csvUri=$csvUri",
+        )
+        _uiState.update { state ->
+            state.copy(
+                selectedDirectoryUri = directoryUri,
+                selectedCsvUri = csvUri,
+                selectedDirectoryName = lastUsedSet.directoryDisplayName,
+                selectedCsvFileName = lastUsedSet.csvDisplayName,
+                targetFiles = emptyList(),
+                renameCandidates = emptyList(),
+                targetFileCount = 0,
+                renameCandidateCount = 0,
+                isReadyToStartMatching = true,
+                error = null,
+            )
+        }
+    }
+
+    fun prepareMatchingData(onPrepared: () -> Unit) {
+        if (_uiState.value.isLoading) return
+
+        val currentState = _uiState.value
+        val directoryUri = currentState.selectedDirectoryUri
+        val csvUri = currentState.selectedCsvUri
+        val directoryName = currentState.selectedDirectoryName
+        val csvName = currentState.selectedCsvFileName
+
+        if (directoryUri == null || csvUri == null || directoryName == null || csvName == null) {
+            _uiState.update { state ->
+                state.copy(
+                    isReadyToStartMatching = false,
+                    error = AppError.Unknown("Directory and CSV must be selected before matching."),
+                )
+            }
+            return
+        }
+
+        viewModelScope.launch {
+            Log.d(LOG_TAG, "HomeViewModel.prepareMatchingData start directoryUri=$directoryUri csvUri=$csvUri")
+            _uiState.update { state ->
+                state.copy(isLoading = true, error = null)
+            }
+
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    takePersistablePermissionUseCase.forDirectory(directoryUri)
+                    takePersistablePermissionUseCase.forCsv(csvUri)
+                    val files = loadSortedDirectoryFiles(directoryUri)
+                    Log.d(LOG_TAG, "HomeViewModel.prepareMatchingData loadDirectory success fileCount=${files.size}")
+                    val rules = loadRenameRulesFromCsvUseCase(csvUri)
+                    val candidates = generateRenameCandidateUseCase(rules).sortedBy { it.displayName.lowercase() }
+                    Log.d(LOG_TAG, "HomeViewModel.prepareMatchingData loadCsv success candidateCount=${candidates.size}")
+                    PreparedMatchingData(files, candidates)
+                }
+            }.onSuccess { preparedData ->
+                val lastUsedSet = LastUsedSet(
+                    directoryUriString = directoryUri.toString(),
+                    directoryDisplayName = directoryName,
+                    csvUriString = csvUri.toString(),
+                    csvDisplayName = csvName,
+                )
+                lastUsedSetStore.save(lastUsedSet)
+                _uiState.update { state ->
+                    state.copy(
+                        targetFiles = preparedData.targetFiles,
+                        renameCandidates = preparedData.renameCandidates,
+                        targetFileCount = preparedData.targetFiles.size,
+                        renameCandidateCount = preparedData.renameCandidates.size,
+                        lastUsedSet = lastUsedSet,
+                        isLastUsedSetAvailable = true,
+                        isReadyToStartMatching = true,
+                        isLoading = false,
+                        error = null,
+                    )
+                }
+                onPrepared()
+            }.onFailure { throwable ->
+                Log.e(LOG_TAG, "HomeViewModel.prepareMatchingData failed message=${throwable.message}", throwable)
+                _uiState.update { state ->
+                    state.copy(
+                        isLoading = false,
+                        error = AppError.Unknown(
+                            detailMessage = throwable.message ?: "Failed to prepare matching data.",
+                            throwable = throwable,
+                        ),
+                    )
+                }
+            }
+        }
+    }
+
     fun onRenameModeSelected(mode: RenameMode) {
         _uiState.update { state ->
             state.copy(renameMode = mode)
@@ -178,6 +301,11 @@ class HomeViewModel(
 
     private fun loadSortedDirectoryFiles(uri: Uri) =
         loadDirectoryFilesUseCase(uri).sortedBy { it.displayName.lowercase() }
+
+    private data class PreparedMatchingData(
+        val targetFiles: List<com.example.easyrename.model.RenameTargetFile>,
+        val renameCandidates: List<com.example.easyrename.model.RenameCandidate>,
+    )
 
     private companion object {
         const val LOG_TAG = "EasyRename"
