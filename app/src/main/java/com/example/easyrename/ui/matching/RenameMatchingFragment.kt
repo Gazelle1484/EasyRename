@@ -1,17 +1,22 @@
 package com.example.easyrename.ui.matching
 
+import android.app.AlertDialog
+import android.content.Context
 import android.content.res.ColorStateList
 import android.graphics.Color
 import android.os.Bundle
+import android.text.InputType
 import android.util.Log
 import android.util.TypedValue
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import android.view.inputmethod.InputMethodManager
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.fragment.app.Fragment
@@ -42,6 +47,7 @@ class RenameMatchingFragment : Fragment() {
     private lateinit var backButton: Button
     private lateinit var autoNumberButton: Button
     private lateinit var resultText: TextView
+    private lateinit var changeAutoNumberButton: Button
     private lateinit var loadingView: LoadingView
     private var lastShownErrorMessage: String? = null
     private var lastSyncedSuccessResult: RenameResult? = null
@@ -94,14 +100,22 @@ class RenameMatchingFragment : Fragment() {
             setTextColor(resolveColor(MaterialR.attr.colorOnSecondary))
         }
         autoNumberButton = Button(context).apply {
-            text = "自動連番: OFF"
+            text = "自動連番: ON"
             isAllCaps = false
             textSize = BODY_TEXT_SIZE_SP
-            backgroundTintList = secondaryButtonTint()
-            setTextColor(resolveColor(MaterialR.attr.colorOnSecondary))
+            backgroundTintList = primaryButtonTint()
+            setTextColor(resolveColor(MaterialR.attr.colorOnPrimary))
         }
         resultText = TextView(context).apply {
             textSize = BODY_TEXT_SIZE_SP
+        }
+        changeAutoNumberButton = Button(context).apply {
+            text = "変更"
+            isAllCaps = false
+            textSize = BODY_TEXT_SIZE_SP
+            visibility = View.GONE
+            backgroundTintList = secondaryButtonTint()
+            setTextColor(resolveColor(MaterialR.attr.colorOnSecondary))
         }
         loadingView = LoadingView(context)
 
@@ -141,7 +155,21 @@ class RenameMatchingFragment : Fragment() {
                 1f,
             ),
         )
-        root.addView(resultText)
+        root.addView(
+            LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                addView(
+                    resultText,
+                    LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                        marginEnd = 8
+                    },
+                )
+                addView(
+                    changeAutoNumberButton,
+                    LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT),
+                )
+            },
+        )
         root.addView(loadingView)
 
         return root
@@ -176,6 +204,9 @@ class RenameMatchingFragment : Fragment() {
         autoNumberButton.setOnClickListener {
             viewModel.toggleAutoNumbering()
         }
+        changeAutoNumberButton.setOnClickListener {
+            showAutoNumberDialog()
+        }
 
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -209,6 +240,16 @@ class RenameMatchingFragment : Fragment() {
                         ),
                     )
                     loadingView.setLoading(state.isExecuting)
+                    val shouldShowChangeButton = state.isAutoNumberingEnabled &&
+                        state.selectedTargetFileId != null &&
+                        state.selectedCandidateId != null &&
+                        state.selectedPreviewText != null
+                    changeAutoNumberButton.visibility = if (shouldShowChangeButton) {
+                        View.VISIBLE
+                    } else {
+                        View.GONE
+                    }
+                    changeAutoNumberButton.isEnabled = shouldShowChangeButton && !state.isExecuting
                     resultText.text = if (state.isExecuting) {
                         "リネーム中..."
                     } else {
@@ -367,6 +408,71 @@ class RenameMatchingFragment : Fragment() {
         }
     }
 
+    private fun showAutoNumberDialog() {
+        val state = viewModel.uiState.value
+        val currentAutoNumber = viewModel.getNextAutoNumberForSelectedCandidate() ?: return
+        val currentPreview = state.selectedPreviewText.orEmpty()
+        Log.d(
+            LOG_TAG,
+            "RenameMatchingFragment.showAutoNumberDialog isAutoNumberingEnabled=${state.isAutoNumberingEnabled} currentAutoNumberBeforeDialog=$currentAutoNumber selectedPreviewText=$currentPreview",
+        )
+
+        val numberInput = EditText(requireContext()).apply {
+            inputType = InputType.TYPE_CLASS_NUMBER
+            setText(currentAutoNumber.toString())
+            selectAll()
+            textSize = BODY_TEXT_SIZE_SP
+        }
+        val content = LinearLayout(requireContext()).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(48, 16, 48, 0)
+            addView(
+                TextView(requireContext()).apply {
+                    text = "現在の予定名:\n$currentPreview"
+                    textSize = BODY_TEXT_SIZE_SP
+                },
+            )
+            addView(
+                TextView(requireContext()).apply {
+                    text = "次に使う番号:"
+                    textSize = BODY_TEXT_SIZE_SP
+                },
+            )
+            addView(numberInput)
+        }
+
+        val dialog = AlertDialog.Builder(requireContext())
+            .setTitle("連番番号を変更")
+            .setView(content)
+            .setPositiveButton("OK", null)
+            .setNegativeButton("キャンセル", null)
+            .create()
+
+        dialog.setOnShowListener {
+            val positiveButton = dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+            positiveButton.setOnClickListener {
+                val requestedAutoNumber = numberInput.text.toString().toIntOrNull()
+                if (requestedAutoNumber == null || requestedAutoNumber < MIN_AUTO_NUMBER) {
+                    numberInput.error = "1以上の数字を入力してください"
+                    return@setOnClickListener
+                }
+
+                Log.d(
+                    LOG_TAG,
+                    "RenameMatchingFragment.submitAutoNumber requestedAutoNumber=$requestedAutoNumber",
+                )
+                viewModel.setNextAutoNumberForSelectedCandidate(requestedAutoNumber)
+                dialog.dismiss()
+            }
+            numberInput.requestFocus()
+            numberInput.post {
+                val inputMethodManager = requireContext().getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+                inputMethodManager.showSoftInput(numberInput, InputMethodManager.SHOW_IMPLICIT)
+            }
+        }
+        dialog.show()
+    }
+
     private fun resolveColor(attribute: Int): Int {
         val typedValue = TypedValue()
         requireContext().theme.resolveAttribute(attribute, typedValue, true)
@@ -378,5 +484,6 @@ class RenameMatchingFragment : Fragment() {
         const val TAG_PERF = "EasyRenamePerf"
         const val BODY_TEXT_SIZE_SP = 16f
         const val HEADING_TEXT_SIZE_SP = 18f
+        const val MIN_AUTO_NUMBER = 1
     }
 }

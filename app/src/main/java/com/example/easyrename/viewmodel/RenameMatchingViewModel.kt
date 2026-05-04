@@ -48,7 +48,7 @@ class RenameMatchingViewModel(
             val enabled = !state.isAutoNumberingEnabled
             Log.d(LOG_TAG, "RenameMatchingViewModel.toggleAutoNumbering enabled=$enabled")
             val updatedState = state.copy(isAutoNumberingEnabled = enabled, error = null)
-            updatedState.copy(selectedPreviewText = buildSelectedPreviewText(updatedState))
+            updatedState.withSelectedPreview()
         }
     }
 
@@ -70,7 +70,7 @@ class RenameMatchingViewModel(
                 ),
                 error = null,
             )
-            updatedState.copy(selectedPreviewText = buildSelectedPreviewText(updatedState))
+            updatedState.withSelectedPreview()
         }
     }
 
@@ -92,7 +92,42 @@ class RenameMatchingViewModel(
                 ),
                 error = null,
             )
-            updatedState.copy(selectedPreviewText = buildSelectedPreviewText(updatedState))
+            updatedState.withSelectedPreview()
+        }
+    }
+
+    fun getNextAutoNumberForSelectedCandidate(): Int? {
+        val state = _uiState.value
+        if (!state.isAutoNumberingEnabled) return null
+
+        val selectedCandidate = state.renameCandidates.firstOrNull { it.id == state.selectedCandidateId }
+            ?: return null
+
+        return autoNumberCounters[selectedCandidate.rawPattern] ?: INITIAL_AUTO_NUMBER
+    }
+
+    fun setNextAutoNumberForSelectedCandidate(number: Int) {
+        if (number < INITIAL_AUTO_NUMBER) return
+
+        _uiState.update { state ->
+            if (!state.isAutoNumberingEnabled || state.isExecuting) return@update state
+
+            val selectedCandidate = state.renameCandidates.firstOrNull { it.id == state.selectedCandidateId }
+                ?: return@update state
+
+            val currentAutoNumber = autoNumberCounters[selectedCandidate.rawPattern] ?: INITIAL_AUTO_NUMBER
+            Log.d(
+                LOG_TAG,
+                "RenameMatchingViewModel.setNextAutoNumber currentAutoNumberBeforeDialog=$currentAutoNumber requestedAutoNumber=$number selectedCandidate.rawPattern=${selectedCandidate.rawPattern}",
+            )
+            autoNumberCounters[selectedCandidate.rawPattern] = number
+            val updatedState = state.copy(error = null)
+            val previewState = updatedState.withSelectedPreview()
+            Log.d(
+                LOG_TAG,
+                "RenameMatchingViewModel.setNextAutoNumber selectedPreviewText=${previewState.selectedPreviewText} selectedAutoNumber=${previewState.selectedAutoNumber}",
+            )
+            previewState
         }
     }
 
@@ -256,6 +291,7 @@ class RenameMatchingViewModel(
                 selectedCandidateId = null,
                 canExecuteRename = false,
                 selectedPreviewText = null,
+                selectedAutoNumber = null,
                 isExecuting = false,
                 lastResult = result,
                 error = null,
@@ -320,6 +356,22 @@ class RenameMatchingViewModel(
             "RenameMatchingViewModel.preview selectedTargetFile.displayName=${selectedFile.displayName} selectedCandidate.displayName=${selectedCandidate.displayName} selectedPreviewText=$previewText isAutoNumberingEnabled=${state.isAutoNumberingEnabled} previewAutoNumber=$previewAutoNumber displayNamePreserveCase=true",
         )
         return previewText
+    }
+
+    private fun RenameMatchingUiState.withSelectedPreview(): RenameMatchingUiState {
+        return copy(
+            selectedAutoNumber = getSelectedAutoNumber(this),
+            selectedPreviewText = buildSelectedPreviewText(this),
+        )
+    }
+
+    private fun getSelectedAutoNumber(state: RenameMatchingUiState): Int? {
+        if (!state.isAutoNumberingEnabled) return null
+
+        val selectedCandidate = state.renameCandidates.firstOrNull { it.id == state.selectedCandidateId }
+            ?: return null
+
+        return autoNumberCounters[selectedCandidate.rawPattern] ?: INITIAL_AUTO_NUMBER
     }
 
     private companion object {
