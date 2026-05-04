@@ -7,6 +7,7 @@ import com.example.easyrename.data.csv.CsvRuleParser
 import com.example.easyrename.data.preferences.LastUsedSetStore
 import com.example.easyrename.data.repository.StorageRepositoryImpl
 import com.example.easyrename.data.saf.SafDocumentDataSource
+import com.example.easyrename.domain.history.RenameHistoryManager
 import com.example.easyrename.domain.usecase.ExecuteRenameUseCase
 import com.example.easyrename.domain.usecase.GenerateRenameCandidateUseCase
 import com.example.easyrename.domain.usecase.LoadDirectoryFilesUseCase
@@ -55,10 +56,15 @@ class AppViewModelFactory(
                     renameMode = homeState?.renameMode ?: RenameMode.Prefix,
                     initialTargetFiles = homeState?.targetFiles.orEmpty(),
                     initialRenameCandidates = homeState?.renameCandidates.orEmpty(),
+                    renameHistoryManager = renameHistoryManager,
                 ) as T
             }
 
             else -> throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")
         }
+    }
+
+    private companion object {
+        val renameHistoryManager = RenameHistoryManager()
     }
 }

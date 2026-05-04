@@ -14,6 +14,8 @@ data class RenameMatchingUiState(
     val isExecuting: Boolean = false,
     val isAutoNumberingEnabled: Boolean = true,
     val selectedAutoNumber: Int? = null,
+    val canUndo: Boolean = false,
+    val renameHistoryCount: Int = 0,
     val selectedPreviewText: String? = null,
     val lastResult: RenameResult? = null,
     val error: AppError? = null,
