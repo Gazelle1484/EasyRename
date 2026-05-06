@@ -416,6 +416,8 @@ class SafDocumentDataSource(
             val elapsedMs = SystemClock.elapsedRealtime() - start
             if (renamedUri != null) {
                 Log.d(TAG_SAF_RESOLVE, "documentsContract rename success elapsedMs=$elapsedMs afterUri=$renamedUri")
+                Log.d(TAG_SAF_RESOLVE, "result path=DocumentsContract success=true beforeName=$beforeName afterName=$afterName afterUri=$renamedUri")
+                Log.d(TAG_SAF_RESOLVE, "result renamePath=${RenamePath.SingleUri} afterUri=$renamedUri")
                 DocumentsContractRenameAttempt(
                     result = RenameResult(
                         beforeName = beforeName,

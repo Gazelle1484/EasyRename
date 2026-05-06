@@ -117,12 +117,24 @@ class HomeViewModel(
 
                 if (shouldUpdate) {
                     val updatedUri = result.afterUri ?: file.uri
+                    Log.d(
+                        TAG_STATE_SYNC,
+                        "home applyRenameResult sourceFileId=${result.sourceFileId}",
+                    )
+                    Log.d(
+                        TAG_STATE_SYNC,
+                        "home before displayName=${file.displayName} uri=${file.uri} id=${file.id}",
+                    )
                     val updatedFile = file.copy(
                         id = updatedUri.toString(),
                         displayName = result.afterName,
                         uri = updatedUri,
                         isSelected = false,
                         isRenamed = true,
+                    )
+                    Log.d(
+                        TAG_STATE_SYNC,
+                        "home after displayName=${updatedFile.displayName} uri=${updatedFile.uri} id=${updatedFile.id} isRenamed=${updatedFile.isRenamed}",
                     )
                     Log.d(
                         LOG_TAG,
@@ -157,12 +169,20 @@ class HomeViewModel(
 
                 if (shouldUpdate) {
                     val updatedUri = result.afterUri ?: file.uri
+                    Log.d(
+                        TAG_STATE_SYNC,
+                        "home applyUndo before displayName=${file.displayName} uri=${file.uri} id=${file.id}",
+                    )
                     val updatedFile = file.copy(
                         id = updatedUri.toString(),
                         displayName = result.afterName,
                         uri = updatedUri,
                         isSelected = false,
                         isRenamed = false,
+                    )
+                    Log.d(
+                        TAG_STATE_SYNC,
+                        "home applyUndo after displayName=${updatedFile.displayName} uri=${updatedFile.uri} id=${updatedFile.id} isRenamed=${updatedFile.isRenamed}",
                     )
                     Log.d(
                         LOG_TAG,
@@ -376,5 +396,6 @@ class HomeViewModel(
     private companion object {
         const val LOG_TAG = "EasyRename"
         const val TAG_PERF = "EasyRenamePerf"
+        const val TAG_STATE_SYNC = "EasyRenameStateSync"
     }
 }

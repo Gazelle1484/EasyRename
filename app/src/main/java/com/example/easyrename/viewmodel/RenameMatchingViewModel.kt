@@ -164,6 +164,14 @@ class RenameMatchingViewModel(
         )
         Log.d(
             TAG_HISTORY,
+            "undo start record.beforeName=${latest.beforeName} record.afterName=${latest.afterName}",
+        )
+        Log.d(
+            TAG_HISTORY,
+            "undo sourceUriFromHistoryAfterUri=${latest.afterUri}",
+        )
+        Log.d(
+            TAG_HISTORY,
             "undo clicked latest beforeName=${latest.beforeName} afterName=${latest.afterName} beforeUri=${latest.beforeUri} afterUri=${latest.afterUri} renameMode=${latest.renameMode} autoNumber=${latest.autoNumber}",
         )
 
@@ -379,12 +387,24 @@ class RenameMatchingViewModel(
             val updatedFiles = state.targetFiles.map { file ->
                 if (file.id == state.selectedTargetFileId) {
                     val updatedUri = result.afterUri ?: file.uri
+                    Log.d(
+                        TAG_STATE_SYNC,
+                        "matching applyRenameResult sourceFileId=${result.sourceFileId}",
+                    )
+                    Log.d(
+                        TAG_STATE_SYNC,
+                        "matching before displayName=${file.displayName} uri=${file.uri} id=${file.id}",
+                    )
                     val updatedFile = file.copy(
                         id = updatedUri.toString(),
                         displayName = result.afterName,
                         uri = updatedUri,
                         isSelected = false,
                         isRenamed = true,
+                    )
+                    Log.d(
+                        TAG_STATE_SYNC,
+                        "matching after displayName=${updatedFile.displayName} uri=${updatedFile.uri} id=${updatedFile.id} isRenamed=${updatedFile.isRenamed}",
                     )
                     Log.d(
                         LOG_TAG,
@@ -474,12 +494,20 @@ class RenameMatchingViewModel(
 
                 if (shouldUpdate) {
                     val updatedUri = result.afterUri ?: Uri.parse(record.beforeUri)
+                    Log.d(
+                        TAG_STATE_SYNC,
+                        "matching applyUndo before displayName=${file.displayName} uri=${file.uri} id=${file.id}",
+                    )
                     val updatedFile = file.copy(
                         id = updatedUri.toString(),
                         displayName = record.beforeName,
                         uri = updatedUri,
                         isSelected = false,
                         isRenamed = false,
+                    )
+                    Log.d(
+                        TAG_STATE_SYNC,
+                        "matching applyUndo after displayName=${updatedFile.displayName} uri=${updatedFile.uri} id=${updatedFile.id} isRenamed=${updatedFile.isRenamed}",
                     )
                     Log.d(
                         LOG_TAG,
@@ -550,6 +578,14 @@ class RenameMatchingViewModel(
     ) {
         val timestampMillis = System.currentTimeMillis()
         val afterUri = result.afterUri ?: selectedFile.uri
+        Log.d(
+            TAG_HISTORY,
+            "history add afterUri source=${if (result.afterUri != null) "RenameResult.afterUri" else "selectedFile.uri"} afterUri=$afterUri",
+        )
+        Log.d(
+            TAG_HISTORY,
+            "history add beforeUri=${selectedFile.uri} afterUri=$afterUri renamePath=${result.renamePath}",
+        )
         val record = RenameHistoryRecord(
             id = "$timestampMillis-${afterUri}",
             timestampMillis = timestampMillis,
@@ -565,6 +601,10 @@ class RenameMatchingViewModel(
             autoNumber = autoNumber,
         )
         renameHistoryManager.add(record)
+        Log.d(
+            TAG_HISTORY,
+            "history add stored beforeUri=${record.beforeUri} afterUri=${record.afterUri} renameResultAfterUri=${result.afterUri} matchesRenameResult=${result.afterUri?.toString() == record.afterUri}",
+        )
     }
 
     private fun updateUndoState() {
@@ -593,6 +633,7 @@ class RenameMatchingViewModel(
         const val LOG_TAG = "EasyRename"
         const val TAG_HISTORY = "EasyRenameHistory"
         const val TAG_PERF = "EasyRenamePerf"
+        const val TAG_STATE_SYNC = "EasyRenameStateSync"
         const val INITIAL_AUTO_NUMBER = 1
     }
 }

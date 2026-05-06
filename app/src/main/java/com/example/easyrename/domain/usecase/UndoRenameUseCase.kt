@@ -26,6 +26,10 @@ class UndoRenameUseCase(
             TAG_HISTORY,
             "undo sourceUri=$sourceUri targetUriName=$targetName",
         )
+        Log.d(
+            TAG_HISTORY,
+            "undo usecase sourceUri=record.afterUri sourceUri=$sourceUri targetName=${record.beforeName}",
+        )
 
         if (directoryUri == null) {
             Log.d(
