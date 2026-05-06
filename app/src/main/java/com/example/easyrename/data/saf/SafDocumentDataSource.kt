@@ -46,10 +46,22 @@ class SafDocumentDataSource(
         return decodeText(bytes)
     }
 
-    fun renameFile(directoryUri: Uri, fileUri: Uri, newName: String): RenameResult {
+    fun renameFile(
+        directoryUri: Uri,
+        fileUri: Uri,
+        newName: String,
+        expectedBeforeName: String? = null,
+    ): RenameResult {
         val start = SystemClock.elapsedRealtime()
         Log.d(LOG_TAG, "Saf.renameFile start directoryUri=$directoryUri fileUri=$fileUri afterName=$newName")
-        val fastPathResult = trySingleUriFastPath(fileUri, newName)
+        Log.d(TAG_SAF_RESOLVE, "rename request start")
+        Log.d(TAG_SAF_RESOLVE, "directoryUri=$directoryUri")
+        Log.d(TAG_SAF_RESOLVE, "requestedFileUri=$fileUri")
+        Log.d(TAG_SAF_RESOLVE, "expectedBeforeName=${expectedBeforeName ?: fileUri.lastPathSegment.orEmpty()}")
+        Log.d(TAG_SAF_RESOLVE, "requestedAfterName=$newName")
+
+        val fastPathAttempt = trySingleUriFastPath(fileUri, newName, expectedBeforeName)
+        val fastPathResult = fastPathAttempt.result
         if (fastPathResult.success) {
             Log.d(
                 TAG_PERF,
@@ -59,6 +71,8 @@ class SafDocumentDataSource(
         }
 
         val fallbackStart = SystemClock.elapsedRealtime()
+        val expectedName = expectedBeforeName ?: fastPathResult.beforeName.ifBlank { fileUri.lastPathSegment.orEmpty() }
+        Log.d(TAG_SAF_RESOLVE, "treeUri fallback start directoryUri=$directoryUri expectedName=$expectedName")
         Log.d(
             TAG_PERF,
             "treeUri fallback start reason=${fastPathResult.errorType ?: fastPathResult.errorMessage} beforeName=${fastPathResult.beforeName} afterName=$newName",
@@ -76,8 +90,16 @@ class SafDocumentDataSource(
 
             val directory = DocumentFile.fromTreeUri(context, directoryUri)
             Log.d(LOG_TAG, "Saf.fromTreeUri result=${directory != null} directoryUri=$directoryUri")
+            Log.d(TAG_SAF_RESOLVE, "treeUri scope directoryUri=$directoryUri")
+            Log.d(TAG_SAF_RESOLVE, "treeUri listFiles from selected directory only=true")
+            Log.d(TAG_SAF_RESOLVE, "treeUri listFiles source=selectedDirectory")
 
             if (directory == null) {
+                Log.d(
+                    TAG_SAF_RESOLVE,
+                    "treeUri not found expectedName=$expectedName scannedCount=0 elapsedMs=${SystemClock.elapsedRealtime() - fallbackStart}",
+                )
+                Log.d(TAG_SAF_RESOLVE, "treeUri end success=false elapsedMs=${SystemClock.elapsedRealtime() - fallbackStart}")
                 Log.d(
                     TAG_PERF,
                     "treeUri fallback failed reason=FileNotFound elapsedMs=${SystemClock.elapsedRealtime() - fallbackStart} beforeName=$beforeName afterName=$newName",
@@ -97,6 +119,7 @@ class SafDocumentDataSource(
             }
 
             val directoryFiles = directory.listFiles().filter { it.isFile }
+            logTreeUriCandidates(directoryFiles, expectedName, fileUri)
             val targetFile = directoryFiles.firstOrNull { it.uri == fileUri }
                 ?: directoryFiles.firstOrNull { it.name == beforeName }
             val duplicateFile = directoryFiles.firstOrNull { file ->
@@ -109,6 +132,11 @@ class SafDocumentDataSource(
 
             if (targetFile == null) {
                 Log.e(LOG_TAG, "Saf.renameFile FileNotFound directoryUri=$directoryUri fileUri=$fileUri beforeName=$beforeName")
+                Log.d(
+                    TAG_SAF_RESOLVE,
+                    "treeUri not found expectedName=$expectedName scannedCount=${directoryFiles.size} elapsedMs=${SystemClock.elapsedRealtime() - fallbackStart}",
+                )
+                Log.d(TAG_SAF_RESOLVE, "treeUri end success=false elapsedMs=${SystemClock.elapsedRealtime() - fallbackStart}")
                 Log.d(
                     TAG_PERF,
                     "treeUri fallback failed reason=FileNotFound elapsedMs=${SystemClock.elapsedRealtime() - fallbackStart} beforeName=$beforeName afterName=$newName",
@@ -131,8 +159,20 @@ class SafDocumentDataSource(
                 LOG_TAG,
                 "Saf.target beforeName=${targetFile.name} afterName=$newName uri=${targetFile.uri}",
             )
+            val treeName = targetFile.name ?: targetFile.uri.lastPathSegment.orEmpty()
+            Log.d(TAG_SAF_RESOLVE, "treeUri found expected=$expectedName actual=$treeName uri=${targetFile.uri}")
+            Log.d(TAG_SAF_RESOLVE, "treeUri name compare expected=$expectedName actual=$treeName matches=${expectedName == treeName}")
+            if (fastPathAttempt.resolvedName == null) {
+                Log.d(TAG_SAF_RESOLVE, "singleVsTree compare skipped reason=singleUriNameUnavailable")
+            } else {
+                Log.d(
+                    TAG_SAF_RESOLVE,
+                    "singleVsTree compare singleName=${fastPathAttempt.resolvedName} treeName=$treeName matches=${fastPathAttempt.resolvedName == treeName}",
+                )
+            }
 
             if (duplicateFile != null && duplicateFile.uri != targetFile.uri) {
+                Log.d(TAG_SAF_RESOLVE, "treeUri end success=false elapsedMs=${SystemClock.elapsedRealtime() - fallbackStart}")
                 Log.d(
                     TAG_PERF,
                     "treeUri fallback failed reason=FileAlreadyExists elapsedMs=${SystemClock.elapsedRealtime() - fallbackStart} beforeName=${targetFile.name ?: beforeName} afterName=$newName",
@@ -161,9 +201,11 @@ class SafDocumentDataSource(
                 TAG_PERF,
                 "treeUri fallback success elapsedMs=${SystemClock.elapsedRealtime() - fallbackStart} success=${success.success} errorType=${success.errorType} beforeName=${success.beforeName} afterName=${success.afterName} afterUri=${success.afterUri}",
             )
+            Log.d(TAG_SAF_RESOLVE, "treeUri end success=${success.success} elapsedMs=${SystemClock.elapsedRealtime() - fallbackStart}")
             success
         } catch (exception: SecurityException) {
             Log.e(LOG_TAG, "Saf.renameFile SecurityException message=${exception.message}", exception)
+            Log.d(TAG_SAF_RESOLVE, "treeUri end success=false elapsedMs=${SystemClock.elapsedRealtime() - fallbackStart}")
             Log.d(
                 TAG_PERF,
                 "treeUri fallback failed reason=SecurityException elapsedMs=${SystemClock.elapsedRealtime() - fallbackStart} afterName=$newName",
@@ -178,6 +220,7 @@ class SafDocumentDataSource(
             )
         } catch (exception: IllegalArgumentException) {
             Log.e(LOG_TAG, "Saf.renameFile IllegalArgumentException message=${exception.message}", exception)
+            Log.d(TAG_SAF_RESOLVE, "treeUri end success=false elapsedMs=${SystemClock.elapsedRealtime() - fallbackStart}")
             Log.d(
                 TAG_PERF,
                 "treeUri fallback failed reason=IllegalArgumentException elapsedMs=${SystemClock.elapsedRealtime() - fallbackStart} afterName=$newName",
@@ -192,6 +235,7 @@ class SafDocumentDataSource(
             )
         } catch (exception: Exception) {
             Log.e(LOG_TAG, "Saf.renameFile exceptionClass=${exception::class.java.simpleName} message=${exception.message}", exception)
+            Log.d(TAG_SAF_RESOLVE, "treeUri end success=false elapsedMs=${SystemClock.elapsedRealtime() - fallbackStart}")
             Log.d(
                 TAG_PERF,
                 "treeUri fallback failed reason=${exception::class.java.simpleName} elapsedMs=${SystemClock.elapsedRealtime() - fallbackStart} afterName=$newName",
@@ -240,58 +284,85 @@ class SafDocumentDataSource(
     private companion object {
         const val LOG_TAG = "EasyRename"
         const val TAG_PERF = "EasyRenamePerf"
+        const val TAG_SAF_RESOLVE = "EasyRenameSafResolve"
         const val SHIFT_JIS = "Shift_JIS"
+        const val TREE_URI_COMPARE_LOG_LIMIT = 50
     }
 
-    private fun trySingleUriFastPath(fileUri: Uri, newName: String): RenameResult {
+    private fun trySingleUriFastPath(
+        fileUri: Uri,
+        newName: String,
+        expectedBeforeName: String?,
+    ): SingleUriAttempt {
         val start = SystemClock.elapsedRealtime()
+        val expectedName = expectedBeforeName ?: fileUri.lastPathSegment.orEmpty()
+        Log.d(TAG_SAF_RESOLVE, "singleUri start expectedName=$expectedName fileUri=$fileUri")
         Log.d(TAG_PERF, "singleUri fast path start fileUri=$fileUri afterName=$newName")
         val singleFile = try {
             DocumentFile.fromSingleUri(context, fileUri)
         } catch (exception: Exception) {
+            Log.d(TAG_SAF_RESOLVE, "singleUri failed reason=${exception::class.java.simpleName} exception=${exception.message}")
+            Log.d(TAG_SAF_RESOLVE, "singleUri end success=false elapsedMs=${SystemClock.elapsedRealtime() - start}")
             Log.d(
                 TAG_PERF,
                 "singleUri fast path failed reason=${exception::class.java.simpleName} elapsedMs=${SystemClock.elapsedRealtime() - start}",
             )
-            return RenameResult(
+            return SingleUriAttempt(
+                result = RenameResult(
                 beforeName = fileUri.lastPathSegment.orEmpty(),
                 afterName = newName,
                 success = false,
                 errorMessage = "${exception::class.java.simpleName}: ${exception.message ?: "Single URI could not be resolved."}",
                 errorType = RenameErrorType.Unknown,
                 renamePath = RenamePath.SingleUri,
+                ),
+                resolvedName = null,
             )
         }
 
         if (singleFile == null) {
+            Log.d(TAG_SAF_RESOLVE, "singleUri failed reason=document_not_found")
+            Log.d(TAG_SAF_RESOLVE, "singleUri end success=false elapsedMs=${SystemClock.elapsedRealtime() - start}")
             Log.d(
                 TAG_PERF,
                 "singleUri fast path failed reason=DocumentFileNull elapsedMs=${SystemClock.elapsedRealtime() - start}",
             )
-            return RenameResult(
+            return SingleUriAttempt(
+                result = RenameResult(
                 beforeName = fileUri.lastPathSegment.orEmpty(),
                 afterName = newName,
                 success = false,
                 errorMessage = "FileNotFound: Single URI DocumentFile could not be resolved.",
                 errorType = RenameErrorType.FileNotFound,
                 renamePath = RenamePath.SingleUri,
+                ),
+                resolvedName = null,
             )
         }
 
         val beforeName = singleFile.name ?: fileUri.lastPathSegment.orEmpty()
+        Log.d(
+            TAG_SAF_RESOLVE,
+            "singleUri document resolved name=${singleFile.name} uri=${singleFile.uri} exists=${readDocumentFlag("exists") { singleFile.exists() }} canWrite=${readDocumentFlag("canWrite") { singleFile.canWrite() }}",
+        )
+        Log.d(TAG_SAF_RESOLVE, "singleUri name compare expected=$expectedName actual=$beforeName matches=${expectedName == beforeName}")
+        Log.d(TAG_SAF_RESOLVE, "singleUri accepted expected=$expectedName actual=$beforeName")
         val result = renameToSafely(singleFile, newName, beforeName, RenamePath.SingleUri)
         if (result.success) {
             Log.d(
                 TAG_PERF,
                 "singleUri fast path success elapsedMs=${SystemClock.elapsedRealtime() - start} beforeName=${result.beforeName} afterName=${result.afterName} afterUri=${result.afterUri}",
             )
+            Log.d(TAG_SAF_RESOLVE, "singleUri end success=true elapsedMs=${SystemClock.elapsedRealtime() - start}")
         } else {
+            Log.d(TAG_SAF_RESOLVE, "singleUri failed reason=${result.errorType ?: result.errorMessage}")
+            Log.d(TAG_SAF_RESOLVE, "singleUri end success=false elapsedMs=${SystemClock.elapsedRealtime() - start}")
             Log.d(
                 TAG_PERF,
                 "singleUri fast path failed reason=${result.errorType ?: result.errorMessage} elapsedMs=${SystemClock.elapsedRealtime() - start} beforeName=${result.beforeName} afterName=${result.afterName}",
             )
         }
-        return result
+        return SingleUriAttempt(result = result, resolvedName = beforeName)
     }
 
     private fun renameToSafely(
@@ -302,8 +373,13 @@ class SafDocumentDataSource(
     ): RenameResult {
         return try {
             val start = SystemClock.elapsedRealtime()
+            Log.d(TAG_SAF_RESOLVE, "renameTo start sourceName=$beforeName targetName=$newName sourceUri=${targetFile.uri}")
             Log.d(TAG_PERF, "saf renameTo start beforeName=$beforeName afterName=$newName")
             val renameSuccess = targetFile.renameTo(newName)
+            Log.d(
+                TAG_SAF_RESOLVE,
+                "renameTo end success=$renameSuccess elapsedMs=${SystemClock.elapsedRealtime() - start} afterUri=${if (renameSuccess) targetFile.uri else null}",
+            )
             Log.d(
                 TAG_PERF,
                 "saf renameTo end success=$renameSuccess elapsedMs=${SystemClock.elapsedRealtime() - start} beforeName=$beforeName afterName=$newName afterUri=${if (renameSuccess) targetFile.uri else null}",
@@ -359,4 +435,46 @@ class SafDocumentDataSource(
             )
         }
     }
+
+    private fun logTreeUriCandidates(
+        directoryFiles: List<DocumentFile>,
+        expectedName: String,
+        fileUri: Uri,
+    ) {
+        var loggedCount = 0
+        directoryFiles.forEachIndexed { index, file ->
+            val candidateName = file.name ?: file.uri.lastPathSegment.orEmpty()
+            val matchesName = candidateName == expectedName
+            val matchesUri = file.uri == fileUri
+            if (loggedCount < TREE_URI_COMPARE_LOG_LIMIT) {
+                Log.d(
+                    TAG_SAF_RESOLVE,
+                    "treeUri compare[${index + 1}] candidateName=$candidateName expectedName=$expectedName matches=${matchesName || matchesUri}",
+                )
+                loggedCount += 1
+            }
+            if (matchesName || matchesUri) {
+                Log.d(TAG_SAF_RESOLVE, "treeUri candidate matched name=$candidateName uri=${file.uri}")
+            }
+        }
+        if (directoryFiles.size > TREE_URI_COMPARE_LOG_LIMIT) {
+            Log.d(
+                TAG_SAF_RESOLVE,
+                "treeUri compare log truncated count=${directoryFiles.size - TREE_URI_COMPARE_LOG_LIMIT} total=${directoryFiles.size}",
+            )
+        }
+    }
+
+    private fun readDocumentFlag(label: String, block: () -> Boolean): String {
+        return try {
+            block().toString()
+        } catch (exception: Exception) {
+            "unavailable:${label}:${exception::class.java.simpleName}"
+        }
+    }
+
+    private data class SingleUriAttempt(
+        val result: RenameResult,
+        val resolvedName: String?,
+    )
 }

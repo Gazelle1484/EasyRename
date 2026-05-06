@@ -61,6 +61,7 @@ class UndoRenameUseCase(
             directoryUri = directoryUri,
             fileUri = sourceUri,
             newName = targetName,
+            expectedBeforeName = record.afterName,
         ).copy(sourceFileId = record.sourceFileIdAfter ?: record.afterUri)
 
         Log.d(

@@ -19,11 +19,16 @@ class StorageRepositoryImpl(
         return safDocumentDataSource.readTextFromUri(uri)
     }
 
-    override fun renameFile(directoryUri: Uri, fileUri: Uri, newName: String): RenameResult {
+    override fun renameFile(
+        directoryUri: Uri,
+        fileUri: Uri,
+        newName: String,
+        expectedBeforeName: String?,
+    ): RenameResult {
         val start = SystemClock.elapsedRealtime()
-        Log.d(TAG_PERF, "repository rename start fileUri=$fileUri afterName=$newName")
-        Log.d(LOG_TAG, "StorageRepository.renameFile directoryUri=$directoryUri fileUri=$fileUri newName=$newName")
-        val result = safDocumentDataSource.renameFile(directoryUri, fileUri, newName)
+        Log.d(TAG_PERF, "repository rename start fileUri=$fileUri beforeName=$expectedBeforeName afterName=$newName")
+        Log.d(LOG_TAG, "StorageRepository.renameFile directoryUri=$directoryUri fileUri=$fileUri beforeName=$expectedBeforeName newName=$newName")
+        val result = safDocumentDataSource.renameFile(directoryUri, fileUri, newName, expectedBeforeName)
         Log.d(
             TAG_PERF,
             "repository rename end elapsedMs=${SystemClock.elapsedRealtime() - start} path=${result.renamePath} success=${result.success} errorType=${result.errorType} beforeName=${result.beforeName} afterName=${result.afterName} afterUri=${result.afterUri}",

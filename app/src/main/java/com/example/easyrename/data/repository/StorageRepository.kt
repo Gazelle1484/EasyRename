@@ -10,7 +10,12 @@ interface StorageRepository {
 
     fun readTextFromUri(uri: Uri): String
 
-    fun renameFile(directoryUri: Uri, fileUri: Uri, newName: String): RenameResult
+    fun renameFile(
+        directoryUri: Uri,
+        fileUri: Uri,
+        newName: String,
+        expectedBeforeName: String? = null,
+    ): RenameResult
 
     fun existsInSameDirectory(directoryUri: Uri, fileName: String): Boolean
 

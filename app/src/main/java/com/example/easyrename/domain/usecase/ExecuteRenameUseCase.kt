@@ -39,6 +39,7 @@ class ExecuteRenameUseCase(
             directoryUri = renamePair.directoryUri,
             fileUri = renamePair.sourceFile.uri,
             newName = renamePair.resolvedNewName,
+            expectedBeforeName = renamePair.sourceFile.displayName,
         )
         val resultWithSource = result.copy(sourceFileId = renamePair.sourceFile.id)
         Log.d(
