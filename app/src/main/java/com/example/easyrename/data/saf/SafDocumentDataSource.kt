@@ -72,6 +72,8 @@ class SafDocumentDataSource(
 
         val fallbackStart = SystemClock.elapsedRealtime()
         val expectedName = expectedBeforeName ?: fastPathResult.beforeName.ifBlank { fileUri.lastPathSegment.orEmpty() }
+        var treeScannedCount = 0
+        var treeMatchedIndex: Int? = null
         Log.d(TAG_SAF_RESOLVE, "treeUri fallback start directoryUri=$directoryUri expectedName=$expectedName")
         Log.d(
             TAG_PERF,
@@ -99,7 +101,7 @@ class SafDocumentDataSource(
                     TAG_SAF_RESOLVE,
                     "treeUri not found expectedName=$expectedName scannedCount=0 elapsedMs=${SystemClock.elapsedRealtime() - fallbackStart}",
                 )
-                Log.d(TAG_SAF_RESOLVE, "treeUri end success=false elapsedMs=${SystemClock.elapsedRealtime() - fallbackStart}")
+                Log.d(TAG_SAF_RESOLVE, "treeUri end success=false elapsedMs=${SystemClock.elapsedRealtime() - fallbackStart} scannedCount=0 matchedIndex=null")
                 Log.d(
                     TAG_PERF,
                     "treeUri fallback failed reason=FileNotFound elapsedMs=${SystemClock.elapsedRealtime() - fallbackStart} beforeName=$beforeName afterName=$newName",
@@ -119,9 +121,15 @@ class SafDocumentDataSource(
             }
 
             val directoryFiles = directory.listFiles().filter { it.isFile }
-            logTreeUriCandidates(directoryFiles, expectedName, fileUri)
-            val targetFile = directoryFiles.firstOrNull { it.uri == fileUri }
-                ?: directoryFiles.firstOrNull { it.name == beforeName }
+            val treeSearchResult = findTargetFileInTreeUri(
+                directoryFiles = directoryFiles,
+                expectedName = expectedName,
+                beforeName = beforeName,
+                fileUri = fileUri,
+            )
+            treeScannedCount = treeSearchResult.scannedCount
+            treeMatchedIndex = treeSearchResult.matchedIndex
+            val targetFile = treeSearchResult.targetFile
             val duplicateFile = directoryFiles.firstOrNull { file ->
                 file.name == newName
             }
@@ -134,9 +142,9 @@ class SafDocumentDataSource(
                 Log.e(LOG_TAG, "Saf.renameFile FileNotFound directoryUri=$directoryUri fileUri=$fileUri beforeName=$beforeName")
                 Log.d(
                     TAG_SAF_RESOLVE,
-                    "treeUri not found expectedName=$expectedName scannedCount=${directoryFiles.size} elapsedMs=${SystemClock.elapsedRealtime() - fallbackStart}",
+                    "treeUri not found expectedName=$expectedName scannedCount=$treeScannedCount elapsedMs=${SystemClock.elapsedRealtime() - fallbackStart}",
                 )
-                Log.d(TAG_SAF_RESOLVE, "treeUri end success=false elapsedMs=${SystemClock.elapsedRealtime() - fallbackStart}")
+                Log.d(TAG_SAF_RESOLVE, "treeUri end success=false elapsedMs=${SystemClock.elapsedRealtime() - fallbackStart} scannedCount=$treeScannedCount matchedIndex=$treeMatchedIndex")
                 Log.d(
                     TAG_PERF,
                     "treeUri fallback failed reason=FileNotFound elapsedMs=${SystemClock.elapsedRealtime() - fallbackStart} beforeName=$beforeName afterName=$newName",
@@ -160,7 +168,7 @@ class SafDocumentDataSource(
                 "Saf.target beforeName=${targetFile.name} afterName=$newName uri=${targetFile.uri}",
             )
             val treeName = targetFile.name ?: targetFile.uri.lastPathSegment.orEmpty()
-            Log.d(TAG_SAF_RESOLVE, "treeUri found expected=$expectedName actual=$treeName uri=${targetFile.uri}")
+            Log.d(TAG_SAF_RESOLVE, "treeUri found expected=$expectedName actual=$treeName uri=${targetFile.uri} scannedCount=$treeScannedCount matchedIndex=$treeMatchedIndex")
             Log.d(TAG_SAF_RESOLVE, "treeUri name compare expected=$expectedName actual=$treeName matches=${expectedName == treeName}")
             if (fastPathAttempt.resolvedName == null) {
                 Log.d(TAG_SAF_RESOLVE, "singleVsTree compare skipped reason=singleUriNameUnavailable")
@@ -172,7 +180,7 @@ class SafDocumentDataSource(
             }
 
             if (duplicateFile != null && duplicateFile.uri != targetFile.uri) {
-                Log.d(TAG_SAF_RESOLVE, "treeUri end success=false elapsedMs=${SystemClock.elapsedRealtime() - fallbackStart}")
+                Log.d(TAG_SAF_RESOLVE, "treeUri end success=false elapsedMs=${SystemClock.elapsedRealtime() - fallbackStart} scannedCount=$treeScannedCount matchedIndex=$treeMatchedIndex")
                 Log.d(
                     TAG_PERF,
                     "treeUri fallback failed reason=FileAlreadyExists elapsedMs=${SystemClock.elapsedRealtime() - fallbackStart} beforeName=${targetFile.name ?: beforeName} afterName=$newName",
@@ -201,11 +209,11 @@ class SafDocumentDataSource(
                 TAG_PERF,
                 "treeUri fallback success elapsedMs=${SystemClock.elapsedRealtime() - fallbackStart} success=${success.success} errorType=${success.errorType} beforeName=${success.beforeName} afterName=${success.afterName} afterUri=${success.afterUri}",
             )
-            Log.d(TAG_SAF_RESOLVE, "treeUri end success=${success.success} elapsedMs=${SystemClock.elapsedRealtime() - fallbackStart}")
+            Log.d(TAG_SAF_RESOLVE, "treeUri end success=${success.success} elapsedMs=${SystemClock.elapsedRealtime() - fallbackStart} scannedCount=$treeScannedCount matchedIndex=$treeMatchedIndex")
             success
         } catch (exception: SecurityException) {
             Log.e(LOG_TAG, "Saf.renameFile SecurityException message=${exception.message}", exception)
-            Log.d(TAG_SAF_RESOLVE, "treeUri end success=false elapsedMs=${SystemClock.elapsedRealtime() - fallbackStart}")
+            Log.d(TAG_SAF_RESOLVE, "treeUri end success=false elapsedMs=${SystemClock.elapsedRealtime() - fallbackStart} scannedCount=$treeScannedCount matchedIndex=$treeMatchedIndex")
             Log.d(
                 TAG_PERF,
                 "treeUri fallback failed reason=SecurityException elapsedMs=${SystemClock.elapsedRealtime() - fallbackStart} afterName=$newName",
@@ -220,7 +228,7 @@ class SafDocumentDataSource(
             )
         } catch (exception: IllegalArgumentException) {
             Log.e(LOG_TAG, "Saf.renameFile IllegalArgumentException message=${exception.message}", exception)
-            Log.d(TAG_SAF_RESOLVE, "treeUri end success=false elapsedMs=${SystemClock.elapsedRealtime() - fallbackStart}")
+            Log.d(TAG_SAF_RESOLVE, "treeUri end success=false elapsedMs=${SystemClock.elapsedRealtime() - fallbackStart} scannedCount=$treeScannedCount matchedIndex=$treeMatchedIndex")
             Log.d(
                 TAG_PERF,
                 "treeUri fallback failed reason=IllegalArgumentException elapsedMs=${SystemClock.elapsedRealtime() - fallbackStart} afterName=$newName",
@@ -235,7 +243,7 @@ class SafDocumentDataSource(
             )
         } catch (exception: Exception) {
             Log.e(LOG_TAG, "Saf.renameFile exceptionClass=${exception::class.java.simpleName} message=${exception.message}", exception)
-            Log.d(TAG_SAF_RESOLVE, "treeUri end success=false elapsedMs=${SystemClock.elapsedRealtime() - fallbackStart}")
+            Log.d(TAG_SAF_RESOLVE, "treeUri end success=false elapsedMs=${SystemClock.elapsedRealtime() - fallbackStart} scannedCount=$treeScannedCount matchedIndex=$treeMatchedIndex")
             Log.d(
                 TAG_PERF,
                 "treeUri fallback failed reason=${exception::class.java.simpleName} elapsedMs=${SystemClock.elapsedRealtime() - fallbackStart} afterName=$newName",
@@ -436,33 +444,46 @@ class SafDocumentDataSource(
         }
     }
 
-    private fun logTreeUriCandidates(
+    private fun findTargetFileInTreeUri(
         directoryFiles: List<DocumentFile>,
         expectedName: String,
+        beforeName: String,
         fileUri: Uri,
-    ) {
+    ): TreeUriSearchResult {
         var loggedCount = 0
-        directoryFiles.forEachIndexed { index, file ->
+        var scannedCount = 0
+        for (file in directoryFiles) {
+            scannedCount += 1
             val candidateName = file.name ?: file.uri.lastPathSegment.orEmpty()
-            val matchesName = candidateName == expectedName
+            val matchesName = candidateName == expectedName || candidateName == beforeName
             val matchesUri = file.uri == fileUri
             if (loggedCount < TREE_URI_COMPARE_LOG_LIMIT) {
                 Log.d(
                     TAG_SAF_RESOLVE,
-                    "treeUri compare[${index + 1}] candidateName=$candidateName expectedName=$expectedName matches=${matchesName || matchesUri}",
+                    "treeUri compare[$scannedCount] candidateName=$candidateName expectedName=$expectedName matches=${matchesName || matchesUri}",
                 )
                 loggedCount += 1
             }
             if (matchesName || matchesUri) {
-                Log.d(TAG_SAF_RESOLVE, "treeUri candidate matched name=$candidateName uri=${file.uri}")
+                Log.d(TAG_SAF_RESOLVE, "treeUri candidate matched name=$candidateName uri=${file.uri} matchedIndex=$scannedCount")
+                return TreeUriSearchResult(
+                    targetFile = file,
+                    scannedCount = scannedCount,
+                    matchedIndex = scannedCount,
+                )
             }
         }
-        if (directoryFiles.size > TREE_URI_COMPARE_LOG_LIMIT) {
+        if (scannedCount > TREE_URI_COMPARE_LOG_LIMIT) {
             Log.d(
                 TAG_SAF_RESOLVE,
-                "treeUri compare log truncated count=${directoryFiles.size - TREE_URI_COMPARE_LOG_LIMIT} total=${directoryFiles.size}",
+                "treeUri compare log truncated count=${scannedCount - TREE_URI_COMPARE_LOG_LIMIT} total=$scannedCount",
             )
         }
+        return TreeUriSearchResult(
+            targetFile = null,
+            scannedCount = scannedCount,
+            matchedIndex = null,
+        )
     }
 
     private fun readDocumentFlag(label: String, block: () -> Boolean): String {
@@ -476,5 +497,11 @@ class SafDocumentDataSource(
     private data class SingleUriAttempt(
         val result: RenameResult,
         val resolvedName: String?,
+    )
+
+    private data class TreeUriSearchResult(
+        val targetFile: DocumentFile?,
+        val scannedCount: Int,
+        val matchedIndex: Int?,
     )
 }
