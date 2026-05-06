@@ -3,12 +3,14 @@ package com.example.easyrename.data.saf
 import android.content.Context
 import android.net.Uri
 import android.os.SystemClock
+import android.provider.DocumentsContract
 import android.util.Log
 import androidx.documentfile.provider.DocumentFile
 import com.example.easyrename.model.RenameErrorType
 import com.example.easyrename.model.RenamePath
 import com.example.easyrename.model.RenameResult
 import com.example.easyrename.model.RenameTargetFile
+import java.io.FileNotFoundException
 import java.nio.ByteBuffer
 import java.nio.charset.CharacterCodingException
 import java.nio.charset.Charset
@@ -74,6 +76,7 @@ class SafDocumentDataSource(
         val expectedName = expectedBeforeName ?: fastPathResult.beforeName.ifBlank { fileUri.lastPathSegment.orEmpty() }
         var treeScannedCount = 0
         var treeMatchedIndex: Int? = null
+        Log.d(TAG_SAF_RESOLVE, "documentsContract rename fallback to treeUri reason=${fastPathAttempt.fallbackReason}")
         Log.d(TAG_SAF_RESOLVE, "treeUri fallback start directoryUri=$directoryUri expectedName=$expectedName")
         Log.d(
             TAG_PERF,
@@ -325,6 +328,7 @@ class SafDocumentDataSource(
                 renamePath = RenamePath.SingleUri,
                 ),
                 resolvedName = null,
+                fallbackReason = exception::class.java.simpleName,
             )
         }
 
@@ -345,6 +349,7 @@ class SafDocumentDataSource(
                 renamePath = RenamePath.SingleUri,
                 ),
                 resolvedName = null,
+                fallbackReason = "document_not_found",
             )
         }
 
@@ -354,23 +359,118 @@ class SafDocumentDataSource(
             "singleUri document resolved name=${singleFile.name} uri=${singleFile.uri} exists=${readDocumentFlag("exists") { singleFile.exists() }} canWrite=${readDocumentFlag("canWrite") { singleFile.canWrite() }}",
         )
         Log.d(TAG_SAF_RESOLVE, "singleUri name compare expected=$expectedName actual=$beforeName matches=${expectedName == beforeName}")
-        Log.d(TAG_SAF_RESOLVE, "singleUri accepted expected=$expectedName actual=$beforeName")
-        val result = renameToSafely(singleFile, newName, beforeName, RenamePath.SingleUri)
-        if (result.success) {
+        val documentsContractAttempt = tryRenameByDocumentsContract(
+            fileUri = fileUri,
+            beforeName = beforeName,
+            afterName = newName,
+        )
+        val result = documentsContractAttempt.result
+        if (result != null) {
             Log.d(
                 TAG_PERF,
                 "singleUri fast path success elapsedMs=${SystemClock.elapsedRealtime() - start} beforeName=${result.beforeName} afterName=${result.afterName} afterUri=${result.afterUri}",
             )
             Log.d(TAG_SAF_RESOLVE, "singleUri end success=true elapsedMs=${SystemClock.elapsedRealtime() - start}")
+            return SingleUriAttempt(
+                result = result,
+                resolvedName = beforeName,
+                fallbackReason = null,
+            )
         } else {
-            Log.d(TAG_SAF_RESOLVE, "singleUri failed reason=${result.errorType ?: result.errorMessage}")
+            val fallbackResult = RenameResult(
+                beforeName = beforeName,
+                afterName = newName,
+                success = false,
+                errorMessage = "DocumentsContract: ${documentsContractAttempt.fallbackReason}",
+                errorType = documentsContractAttempt.errorType,
+                renamePath = RenamePath.SingleUri,
+            )
+            Log.d(TAG_SAF_RESOLVE, "singleUri failed reason=${documentsContractAttempt.fallbackReason}")
             Log.d(TAG_SAF_RESOLVE, "singleUri end success=false elapsedMs=${SystemClock.elapsedRealtime() - start}")
             Log.d(
                 TAG_PERF,
-                "singleUri fast path failed reason=${result.errorType ?: result.errorMessage} elapsedMs=${SystemClock.elapsedRealtime() - start} beforeName=${result.beforeName} afterName=${result.afterName}",
+                "singleUri fast path failed reason=${documentsContractAttempt.fallbackReason} elapsedMs=${SystemClock.elapsedRealtime() - start} beforeName=${fallbackResult.beforeName} afterName=${fallbackResult.afterName}",
+            )
+            return SingleUriAttempt(
+                result = fallbackResult,
+                resolvedName = beforeName,
+                fallbackReason = documentsContractAttempt.fallbackReason,
             )
         }
-        return SingleUriAttempt(result = result, resolvedName = beforeName)
+    }
+
+    private fun tryRenameByDocumentsContract(
+        fileUri: Uri,
+        beforeName: String,
+        afterName: String,
+    ): DocumentsContractRenameAttempt {
+        val start = SystemClock.elapsedRealtime()
+        Log.d(TAG_SAF_RESOLVE, "documentsContract rename start sourceName=$beforeName targetName=$afterName sourceUri=$fileUri")
+
+        return try {
+            val renamedUri = DocumentsContract.renameDocument(
+                context.contentResolver,
+                fileUri,
+                afterName,
+            )
+            val elapsedMs = SystemClock.elapsedRealtime() - start
+            if (renamedUri != null) {
+                Log.d(TAG_SAF_RESOLVE, "documentsContract rename success elapsedMs=$elapsedMs afterUri=$renamedUri")
+                DocumentsContractRenameAttempt(
+                    result = RenameResult(
+                        beforeName = beforeName,
+                        afterName = afterName,
+                        success = true,
+                        afterUri = renamedUri,
+                        renamePath = RenamePath.SingleUri,
+                    ),
+                    fallbackReason = null,
+                    errorType = null,
+                )
+            } else {
+                Log.d(TAG_SAF_RESOLVE, "documentsContract rename returned null elapsedMs=$elapsedMs")
+                DocumentsContractRenameAttempt(
+                    result = null,
+                    fallbackReason = "returned_null",
+                    errorType = RenameErrorType.RenameFailed,
+                )
+            }
+        } catch (exception: FileNotFoundException) {
+            val elapsedMs = SystemClock.elapsedRealtime() - start
+            Log.d(TAG_SAF_RESOLVE, "documentsContract rename failed reason=FileNotFound elapsedMs=$elapsedMs exception=${exception.message}")
+            DocumentsContractRenameAttempt(
+                result = null,
+                fallbackReason = "FileNotFound",
+                errorType = RenameErrorType.FileNotFound,
+            )
+        } catch (exception: UnsupportedOperationException) {
+            val elapsedMs = SystemClock.elapsedRealtime() - start
+            Log.d(TAG_SAF_RESOLVE, "documentsContract rename failed reason=UnsupportedOperation elapsedMs=$elapsedMs exception=${exception.message}")
+            DocumentsContractRenameAttempt(
+                result = null,
+                fallbackReason = "UnsupportedOperation",
+                errorType = RenameErrorType.UnsupportedOperation,
+            )
+        } catch (exception: SecurityException) {
+            val elapsedMs = SystemClock.elapsedRealtime() - start
+            Log.d(TAG_SAF_RESOLVE, "documentsContract rename failed reason=SecurityException elapsedMs=$elapsedMs exception=${exception.message}")
+            DocumentsContractRenameAttempt(
+                result = null,
+                fallbackReason = "SecurityException",
+                errorType = RenameErrorType.PermissionDenied,
+            )
+        } catch (exception: Exception) {
+            val elapsedMs = SystemClock.elapsedRealtime() - start
+            Log.d(
+                TAG_SAF_RESOLVE,
+                "documentsContract rename failed reason=Exception elapsedMs=$elapsedMs exception=${exception::class.java.simpleName}:${exception.message}",
+            )
+            DocumentsContractRenameAttempt(
+                result = null,
+                fallbackReason = exception::class.java.simpleName,
+                errorType = RenameErrorType.Unknown,
+            )
+        }
     }
 
     private fun renameToSafely(
@@ -381,12 +481,13 @@ class SafDocumentDataSource(
     ): RenameResult {
         return try {
             val start = SystemClock.elapsedRealtime()
-            Log.d(TAG_SAF_RESOLVE, "renameTo start sourceName=$beforeName targetName=$newName sourceUri=${targetFile.uri}")
+            val renameSource = if (renamePath == RenamePath.TreeUriFallback) "treeUri" else "singleUri"
+            Log.d(TAG_SAF_RESOLVE, "renameTo start source=$renameSource sourceName=$beforeName targetName=$newName sourceUri=${targetFile.uri}")
             Log.d(TAG_PERF, "saf renameTo start beforeName=$beforeName afterName=$newName")
             val renameSuccess = targetFile.renameTo(newName)
             Log.d(
                 TAG_SAF_RESOLVE,
-                "renameTo end success=$renameSuccess elapsedMs=${SystemClock.elapsedRealtime() - start} afterUri=${if (renameSuccess) targetFile.uri else null}",
+                "renameTo end source=$renameSource success=$renameSuccess elapsedMs=${SystemClock.elapsedRealtime() - start} afterUri=${if (renameSuccess) targetFile.uri else null}",
             )
             Log.d(
                 TAG_PERF,
@@ -497,6 +598,13 @@ class SafDocumentDataSource(
     private data class SingleUriAttempt(
         val result: RenameResult,
         val resolvedName: String?,
+        val fallbackReason: String?,
+    )
+
+    private data class DocumentsContractRenameAttempt(
+        val result: RenameResult?,
+        val fallbackReason: String?,
+        val errorType: RenameErrorType?,
     )
 
     private data class TreeUriSearchResult(
