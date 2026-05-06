@@ -142,6 +142,46 @@ class HomeViewModel(
         )
     }
 
+    fun applyUndoRenameResult(result: RenameResult) {
+        if (!result.success) return
+
+        val start = SystemClock.elapsedRealtime()
+        Log.d(
+            TAG_PERF,
+            "home applyUndoRenameResult start sourceFileId=${result.sourceFileId} beforeName=${result.beforeName} afterName=${result.afterName} afterUri=${result.afterUri}",
+        )
+        _uiState.update { state ->
+            val updatedFiles = state.targetFiles.map { file ->
+                val shouldUpdate = file.id == result.sourceFileId ||
+                    (result.sourceFileId == null && file.displayName == result.beforeName)
+
+                if (shouldUpdate) {
+                    val updatedUri = result.afterUri ?: file.uri
+                    val updatedFile = file.copy(
+                        id = updatedUri.toString(),
+                        displayName = result.afterName,
+                        uri = updatedUri,
+                        isSelected = false,
+                        isRenamed = false,
+                    )
+                    Log.d(
+                        LOG_TAG,
+                        "HomeViewModel.applyUndoRenameResult sourceFileId=${result.sourceFileId} beforeName=${result.beforeName} afterName=${result.afterName} afterUri=${result.afterUri} updatedUri=${updatedFile.uri}",
+                    )
+                    updatedFile
+                } else {
+                    file.copy(isSelected = false)
+                }
+            }.sortedBy { it.displayName.lowercase() }
+
+            state.copy(targetFiles = updatedFiles)
+        }
+        Log.d(
+            TAG_PERF,
+            "home applyUndoRenameResult end elapsedMs=${SystemClock.elapsedRealtime() - start} sourceFileId=${result.sourceFileId} afterUri=${result.afterUri}",
+        )
+    }
+
     fun onCsvSelected(uri: Uri) {
         _uiState.update { state ->
             state.copy(isLoading = true, hasMatchingPreparationFailed = false, error = null)

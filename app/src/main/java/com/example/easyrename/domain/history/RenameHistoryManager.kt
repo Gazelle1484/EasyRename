@@ -35,6 +35,17 @@ class RenameHistoryManager(
     fun getLatest(): RenameHistoryRecord? = records.firstOrNull()
 
     @Synchronized
+    fun removeLatest(): RenameHistoryRecord? {
+        if (records.isEmpty()) return null
+
+        val removed = records.removeFirst()
+        logger(
+            "remove latest beforeName=${removed.beforeName} afterName=${removed.afterName} historySize=${records.size}",
+        )
+        return removed
+    }
+
+    @Synchronized
     fun clear() {
         records.clear()
     }

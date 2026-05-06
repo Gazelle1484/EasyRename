@@ -14,6 +14,7 @@ import com.example.easyrename.domain.usecase.LoadDirectoryFilesUseCase
 import com.example.easyrename.domain.usecase.LoadRenameRulesFromCsvUseCase
 import com.example.easyrename.domain.usecase.ResolveRenameNameUseCase
 import com.example.easyrename.domain.usecase.TakePersistablePermissionUseCase
+import com.example.easyrename.domain.usecase.UndoRenameUseCase
 import com.example.easyrename.domain.usecase.ValidateRenameUseCase
 import com.example.easyrename.model.RenameMode
 import com.example.easyrename.viewmodel.HomeViewModel
@@ -52,6 +53,7 @@ class AppViewModelFactory(
                         storageRepository = repository,
                         validateRenameUseCase = validateRenameUseCase,
                     ),
+                    undoRenameUseCase = UndoRenameUseCase(repository),
                     directoryUri = homeState?.selectedDirectoryUri,
                     renameMode = homeState?.renameMode ?: RenameMode.Prefix,
                     initialTargetFiles = homeState?.targetFiles.orEmpty(),

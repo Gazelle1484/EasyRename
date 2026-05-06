@@ -9,6 +9,7 @@ import com.example.easyrename.domain.history.RenameHistoryManager
 import com.example.easyrename.domain.history.RenameHistoryRecord
 import com.example.easyrename.domain.usecase.ExecuteRenameUseCase
 import com.example.easyrename.domain.usecase.ResolveRenameNameUseCase
+import com.example.easyrename.domain.usecase.UndoRenameUseCase
 import com.example.easyrename.model.AppError
 import com.example.easyrename.model.RenameCandidate
 import com.example.easyrename.model.RenameErrorType
@@ -28,6 +29,7 @@ import kotlinx.coroutines.withContext
 class RenameMatchingViewModel(
     private val resolveRenameNameUseCase: ResolveRenameNameUseCase,
     private val executeRenameUseCase: ExecuteRenameUseCase,
+    private val undoRenameUseCase: UndoRenameUseCase,
     private val directoryUri: Uri?,
     private val renameMode: RenameMode,
     initialTargetFiles: List<RenameTargetFile> = emptyList(),
@@ -144,6 +146,11 @@ class RenameMatchingViewModel(
     }
 
     fun onUndoClicked() {
+        if (_uiState.value.isExecuting || _uiState.value.isUndoExecuting) {
+            Log.d(TAG_HISTORY, "undo ignored because rename or undo is already executing")
+            return
+        }
+
         val latest = renameHistoryManager.getLatest()
         if (latest == null) {
             Log.d(TAG_HISTORY, "undo clicked but history is empty")
@@ -153,9 +160,64 @@ class RenameMatchingViewModel(
 
         Log.d(
             TAG_HISTORY,
+            "undo start beforeName=${latest.beforeName} afterName=${latest.afterName} historySize=${renameHistoryManager.size()}",
+        )
+        Log.d(
+            TAG_HISTORY,
             "undo clicked latest beforeName=${latest.beforeName} afterName=${latest.afterName} beforeUri=${latest.beforeUri} afterUri=${latest.afterUri} renameMode=${latest.renameMode} autoNumber=${latest.autoNumber}",
         )
-        updateUndoState()
+
+        viewModelScope.launch {
+            _uiState.update { state ->
+                state.copy(isUndoExecuting = true, error = null)
+            }
+
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    undoRenameUseCase(latest)
+                }
+            }.onSuccess { result ->
+                if (result.success) {
+                    val removed = renameHistoryManager.removeLatest()
+                    Log.d(
+                        TAG_HISTORY,
+                        "undo success restoredName=${result.afterName} resultAfterUri=${result.afterUri} historySize=${renameHistoryManager.size()} removedMatchesLatest=${removed?.id == latest.id}",
+                    )
+                    refreshAfterUndo(latest, result)
+                } else {
+                    Log.d(
+                        TAG_HISTORY,
+                        "undo failed sourceName=${latest.afterName} targetName=${latest.beforeName} errorType=${result.errorType} errorMessage=${result.errorMessage}",
+                    )
+                    _uiState.update { state ->
+                        state.copy(
+                            isUndoExecuting = false,
+                            canUndo = renameHistoryManager.getLatest() != null,
+                            renameHistoryCount = renameHistoryManager.size(),
+                            lastUndoResult = result,
+                            error = toAppError(result),
+                        )
+                    }
+                    updateUndoState()
+                }
+            }.onFailure { throwable ->
+                Log.e(LOG_TAG, "RenameMatchingViewModel.onUndoClicked exceptionClass=${throwable::class.java.simpleName} message=${throwable.message}", throwable)
+                Log.d(
+                    TAG_HISTORY,
+                    "undo failed sourceName=${latest.afterName} targetName=${latest.beforeName} errorType=${RenameErrorType.Unknown} errorMessage=${throwable.message}",
+                )
+                _uiState.update { state ->
+                    state.copy(
+                        isUndoExecuting = false,
+                        error = AppError.Unknown(
+                            detailMessage = throwable.message ?: "Failed to undo rename.",
+                            throwable = throwable,
+                        ),
+                    )
+                }
+                updateUndoState()
+            }
+        }
     }
 
     fun executeSelectedRename() {
@@ -306,6 +368,7 @@ class RenameMatchingViewModel(
                 return@update state.copy(
                     isExecuting = false,
                     lastResult = result,
+                    lastUndoResult = null,
                     selectedPreviewText = null,
                     canUndo = renameHistoryManager.getLatest() != null,
                     renameHistoryCount = renameHistoryManager.size(),
@@ -355,6 +418,7 @@ class RenameMatchingViewModel(
                 renameHistoryCount = renameHistoryManager.size(),
                 isExecuting = false,
                 lastResult = result,
+                lastUndoResult = null,
                 error = null,
             )
         }
@@ -393,6 +457,58 @@ class RenameMatchingViewModel(
         selectedCandidateId: String?,
     ): Boolean {
         return selectedTargetFileId != null && selectedCandidateId != null
+    }
+
+    private fun refreshAfterUndo(record: RenameHistoryRecord, result: RenameResult) {
+        val stateUpdateStart = SystemClock.elapsedRealtime()
+        Log.d(
+            TAG_PERF,
+            "matching undo state update start success=${result.success} path=${result.renamePath} sourceFileId=${result.sourceFileId} beforeName=${result.beforeName} afterName=${result.afterName} afterUri=${result.afterUri}",
+        )
+        _uiState.update { state ->
+            val updatedFiles = state.targetFiles.map { file ->
+                val shouldUpdate = file.id == record.sourceFileIdAfter ||
+                    file.id == record.afterUri ||
+                    file.uri.toString() == record.afterUri ||
+                    file.displayName == record.afterName
+
+                if (shouldUpdate) {
+                    val updatedUri = result.afterUri ?: Uri.parse(record.beforeUri)
+                    val updatedFile = file.copy(
+                        id = updatedUri.toString(),
+                        displayName = record.beforeName,
+                        uri = updatedUri,
+                        isSelected = false,
+                        isRenamed = false,
+                    )
+                    Log.d(
+                        LOG_TAG,
+                        "RenameMatchingViewModel.undoUpdateTargetFile beforeName=${record.beforeName} afterName=${record.afterName} resultAfterUri=${result.afterUri} updatedUri=${updatedFile.uri}",
+                    )
+                    updatedFile
+                } else {
+                    file.copy(isSelected = false)
+                }
+            }.sortedBy { it.displayName.lowercase() }
+
+            state.copy(
+                targetFiles = updatedFiles,
+                selectedTargetFileId = null,
+                selectedCandidateId = null,
+                canExecuteRename = false,
+                selectedPreviewText = null,
+                selectedAutoNumber = null,
+                canUndo = renameHistoryManager.getLatest() != null,
+                renameHistoryCount = renameHistoryManager.size(),
+                isUndoExecuting = false,
+                lastUndoResult = result,
+                error = null,
+            )
+        }
+        Log.d(
+            TAG_PERF,
+            "matching undo state update end elapsedMs=${SystemClock.elapsedRealtime() - stateUpdateStart} path=${result.renamePath} success=${result.success} errorType=${result.errorType} sourceFileId=${result.sourceFileId} afterUri=${result.afterUri}",
+        )
     }
 
     private fun buildSelectedPreviewText(state: RenameMatchingUiState): String? {

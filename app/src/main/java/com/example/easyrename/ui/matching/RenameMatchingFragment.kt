@@ -53,6 +53,7 @@ class RenameMatchingFragment : Fragment() {
     private lateinit var loadingView: LoadingView
     private var lastShownErrorMessage: String? = null
     private var lastSyncedSuccessResult: RenameResult? = null
+    private var lastSyncedUndoResult: RenameResult? = null
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -227,15 +228,16 @@ class RenameMatchingFragment : Fragment() {
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 viewModel.uiState.collect { state ->
-                    renderFiles(state.targetFiles, state.isExecuting)
-                    renderCandidates(state.renameCandidates, state.isExecuting)
-                    executeButton.isEnabled = state.canExecuteRename && !state.isExecuting
+                    val isBusy = state.isExecuting || state.isUndoExecuting
+                    renderFiles(state.targetFiles, isBusy)
+                    renderCandidates(state.renameCandidates, isBusy)
+                    executeButton.isEnabled = state.canExecuteRename && !isBusy
                     executeButton.text = if (state.isExecuting) {
                         "リネーム中..."
                     } else {
                         "リネーム実行"
                     }
-                    autoNumberButton.isEnabled = !state.isExecuting
+                    autoNumberButton.isEnabled = !isBusy
                     autoNumberButton.text = if (state.isAutoNumberingEnabled) {
                         "自動連番: ON"
                     } else {
@@ -255,8 +257,8 @@ class RenameMatchingFragment : Fragment() {
                             },
                         ),
                     )
-                    loadingView.setLoading(state.isExecuting)
-                    undoButton.isEnabled = state.canUndo && !state.isExecuting
+                    loadingView.setLoading(isBusy)
+                    undoButton.isEnabled = state.canUndo && !isBusy
                     undoButton.text = if (state.renameHistoryCount > 0) {
                         "UNDO (${state.renameHistoryCount})"
                     } else {
@@ -271,11 +273,23 @@ class RenameMatchingFragment : Fragment() {
                     } else {
                         View.GONE
                     }
-                    changeAutoNumberButton.isEnabled = shouldShowChangeButton && !state.isExecuting
-                    resultText.text = if (state.isExecuting) {
-                        "リネーム中..."
-                    } else {
-                        state.selectedPreviewText ?: state.lastResult?.let { result ->
+                    changeAutoNumberButton.isEnabled = shouldShowChangeButton && !isBusy
+                    resultText.text = when {
+                        state.isExecuting -> "リネーム中..."
+                        state.isUndoExecuting -> "UNDO中..."
+                        state.selectedPreviewText != null -> state.selectedPreviewText
+                        state.lastUndoResult != null -> state.lastUndoResult.let { result ->
+                            if (result.success) {
+                                if (result != lastSyncedUndoResult) {
+                                    lastSyncedUndoResult = result
+                                    homeViewModel.applyUndoRenameResult(result)
+                                }
+                                "UNDO成功: ${result.beforeName} -> ${result.afterName} に戻しました。"
+                            } else {
+                                "UNDO失敗: ${toResultErrorMessage(result)}"
+                            }
+                        }
+                        state.lastResult != null -> state.lastResult.let { result ->
                             if (result.success) {
                                 if (result != lastSyncedSuccessResult) {
                                     lastSyncedSuccessResult = result
@@ -285,7 +299,8 @@ class RenameMatchingFragment : Fragment() {
                             } else {
                                 "失敗: ${toResultErrorMessage(result)}"
                             }
-                        }.orEmpty()
+                        }
+                        else -> ""
                     }
 
                     state.error?.let { error ->

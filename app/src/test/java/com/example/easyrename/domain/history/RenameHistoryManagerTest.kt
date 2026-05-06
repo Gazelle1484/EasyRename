@@ -59,6 +59,33 @@ class RenameHistoryManagerTest {
         assertEquals(2, manager.size())
     }
 
+    @Test
+    fun removeLatest_removesAndReturnsNewestRecord() {
+        val manager = RenameHistoryManager(logger = {})
+        val first = record(1)
+        val second = record(2)
+        manager.add(first)
+        manager.add(second)
+
+        val removed = manager.removeLatest()
+
+        assertEquals(second, removed)
+        assertEquals(1, manager.size())
+        assertEquals(first, manager.getLatest())
+        assertEquals(listOf(first), manager.getAll())
+    }
+
+    @Test
+    fun removeLatest_returnsNullWhenHistoryIsEmpty() {
+        val manager = RenameHistoryManager(logger = {})
+
+        val removed = manager.removeLatest()
+
+        assertNull(removed)
+        assertEquals(0, manager.size())
+        assertNull(manager.getLatest())
+    }
+
     private fun record(index: Int): RenameHistoryRecord {
         return RenameHistoryRecord(
             id = "history-$index",

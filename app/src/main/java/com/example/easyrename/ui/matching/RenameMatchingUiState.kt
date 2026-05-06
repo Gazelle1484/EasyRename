@@ -12,11 +12,13 @@ data class RenameMatchingUiState(
     val selectedCandidateId: String? = null,
     val canExecuteRename: Boolean = false,
     val isExecuting: Boolean = false,
+    val isUndoExecuting: Boolean = false,
     val isAutoNumberingEnabled: Boolean = true,
     val selectedAutoNumber: Int? = null,
     val canUndo: Boolean = false,
     val renameHistoryCount: Int = 0,
     val selectedPreviewText: String? = null,
     val lastResult: RenameResult? = null,
+    val lastUndoResult: RenameResult? = null,
     val error: AppError? = null,
 )
